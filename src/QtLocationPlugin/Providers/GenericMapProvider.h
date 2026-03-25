@@ -248,6 +248,48 @@ public:
             QGeoMapType::SatelliteMapDay) {}
 };
 
+class CesiumMapProvider : public MapProvider
+{
+protected:
+    CesiumMapProvider(const QString &mapName, const QString &mapTypeId, const QString &imageFormat, quint32 averageSize, QGeoMapType::MapStyle mapStyle)
+        : MapProvider(
+            mapName,
+            QStringLiteral("ion.cesium.com"),
+            imageFormat,
+            averageSize,
+            mapStyle)
+        , _mapTypeId(mapTypeId) {}
+
+private:
+    QString _getURL(int x, int y, int zoom) const final;
+
+    const QString _mapTypeId;
+};
+
+class CesiumWorldImageryMapProvider : public CesiumMapProvider
+{
+public:
+    CesiumWorldImageryMapProvider()
+        : CesiumMapProvider(
+            QStringLiteral("Cesium World Imagery"),
+            QStringLiteral("2"),
+            QStringLiteral("jpeg"),
+            QGC_AVERAGE_TILE_SIZE,
+            QGeoMapType::SatelliteMapDay) {}
+};
+
+class CesiumOpenStreetMapProvider : public CesiumMapProvider
+{
+public:
+    CesiumOpenStreetMapProvider()
+        : CesiumMapProvider(
+            QStringLiteral("Cesium OpenStreetMap"),
+            QStringLiteral("1"),
+            QStringLiteral("png"),
+            QGC_AVERAGE_TILE_SIZE,
+            QGeoMapType::StreetMap) {}
+};
+
 class VWorldMapProvider : public MapProvider
 {
 protected:

@@ -224,6 +224,13 @@
     "default":     ""
 },
 {
+    "name":             "cesiumToken",
+    "shortDesc": "Cesium Ion Token",
+    "longDesc":  "Your personal access token for Cesium Ion map tiles. Get one at https://ion.cesium.com",
+    "type":             "string",
+    "default":     ""
+},
+{
     "name":             "openaipToken",
     "shortDesc": "OpenAIP API Key",
     "longDesc":  "Your personal API key for OpenAIP aviation maps. Get one at https://www.openaip.net",

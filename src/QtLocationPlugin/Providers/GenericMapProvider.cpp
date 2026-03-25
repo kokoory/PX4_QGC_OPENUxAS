@@ -60,6 +60,21 @@ QString MapQuestMapProvider::_getURL(int x, int y, int zoom) const
     return _mapUrl.arg(_getServerNum(x, y, 4)).arg(_mapName).arg(zoom).arg(x).arg(y).arg(_imageFormat);
 }
 
+QString CesiumMapProvider::_getURL(int x, int y, int zoom) const
+{
+    const QString cesiumToken = SettingsManager::instance()->appSettings()->cesiumToken()->rawValue().toString();
+    if (cesiumToken.isEmpty()) {
+        return QString();
+    }
+
+    return QStringLiteral("https://assets.ion.cesium.com/%1/%2/%3/%4.%5?access_token=%6")
+        .arg(_mapTypeId)
+        .arg(zoom)
+        .arg(x)
+        .arg(y)
+        .arg(_imageFormat, cesiumToken);
+}
+
 QString VWorldMapProvider::_getURL(int x, int y, int zoom) const
 {
     if ((zoom < 5) || (zoom > 19)) {

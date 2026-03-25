@@ -53,6 +53,9 @@ const QList<SharedMapProvider> UrlFactory::_providers = {
     std::make_shared<VWorldStreetMapProvider>(),
     std::make_shared<VWorldSatMapProvider>(),
 
+    std::make_shared<CesiumWorldImageryMapProvider>(),
+    std::make_shared<CesiumOpenStreetMapProvider>(),
+
     std::make_shared<JapanStdMapProvider>(),
     std::make_shared<JapanSeamlessMapProvider>(),
     std::make_shared<JapanAnaglyphMapProvider>(),

@@ -28,6 +28,7 @@ Item {
     property Fact   _esriFact:          _settingsManager ? _settingsManager.appSettings.esriToken : null
     property Fact   _customURLFact:     _settingsManager ? _settingsManager.appSettings.customURL : null
     property Fact   _vworldFact:        _settingsManager ? _settingsManager.appSettings.vworldToken : null
+    property Fact   _cesiumFact:        _settingsManager ? _settingsManager.appSettings.cesiumToken : null
 
     SettingsPage {
         id:           settingsPage
@@ -174,6 +175,12 @@ Item {
                 textFieldPreferredWidth:    _largeTextFieldWidth
                 label:                      qsTr("VWorld")
                 fact:                       _appSettings.vworldToken
+            }
+
+            LabelledFactTextField {
+                textFieldPreferredWidth:    _largeTextFieldWidth
+                label:                      qsTr("Cesium Ion")
+                fact:                       _appSettings.cesiumToken
             }
 
             LabelledFactTextField {

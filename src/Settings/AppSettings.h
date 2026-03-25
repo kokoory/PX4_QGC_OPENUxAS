@@ -41,6 +41,7 @@ public:
     DEFINE_SETTINGFACT(esriToken)
     DEFINE_SETTINGFACT(customURL)
     DEFINE_SETTINGFACT(vworldToken)
+    DEFINE_SETTINGFACT(cesiumToken)
     DEFINE_SETTINGFACT(openaipToken)
     DEFINE_SETTINGFACT(gstDebugLevel)
     DEFINE_SETTINGFACT(followTarget)
