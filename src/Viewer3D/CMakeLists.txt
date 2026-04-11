@@ -77,3 +77,14 @@ qt_add_qml_module(Viewer3DModule
         QtQuick3D.Helpers
     NO_PLUGIN
 )
+
+if(TARGET Qt6::WebEngineQuick)
+    set_source_files_properties(Viewer3DQml/Cesium3DView.qml PROPERTIES QT_RESOURCE_ALIAS Cesium3DView.qml)
+    set_source_files_properties(Viewer3DQml/Cesium3DView.html PROPERTIES QT_RESOURCE_ALIAS Cesium3DView.html)
+    qt_target_qml_sources(Viewer3DModule
+        QML_FILES
+            Viewer3DQml/Cesium3DView.qml
+        RESOURCES
+            Viewer3DQml/Cesium3DView.html
+    )
+endif()

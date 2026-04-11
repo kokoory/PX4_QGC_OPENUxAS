@@ -151,6 +151,11 @@ endif()
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Viewer3DModule)
 
+if(TARGET Qt6::WebEngineQuick)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::WebChannel Qt6::WebEngineQuick)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE QGC_CESIUM3D_ENABLED)
+endif()
+
 # ============================================================================
 # Compile Definitions
 # ============================================================================

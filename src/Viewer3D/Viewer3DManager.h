@@ -26,6 +26,7 @@ public:
     enum DisplayMode {
         Map,
         View3D,
+        Cesium3D,
     };
     Q_ENUM(DisplayMode)
 

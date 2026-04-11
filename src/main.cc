@@ -4,6 +4,10 @@
 #include "QGCLoggingCategory.h"
 #include "Platform.h"
 
+#ifdef QGC_CESIUM3D_ENABLED
+    #include <QtWebEngineQuick/QtWebEngineQuick>
+#endif
+
 #ifdef QGC_UNITTEST_BUILD
     #include "UnitTestList.h"
 #endif
@@ -17,6 +21,11 @@ int main(int argc, char *argv[])
     if (const auto exitCode = QGCCommandLineParser::handleParseResult(args)) {
         return *exitCode;
     }
+
+#ifdef QGC_CESIUM3D_ENABLED
+    // --- WebEngine initialization (must be called before QApplication) ---
+    QtWebEngineQuick::initialize();
+#endif
 
     // --- Platform initialization ---
     if (const auto exitCode = Platform::initialize(argc, argv, args)) {

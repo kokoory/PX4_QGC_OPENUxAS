@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QGC Cesium 3D View</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.125/Build/Cesium/Cesium.js"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.125/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        .cesium-viewer-toolbar,
+        .cesium-viewer-animationContainer,
+        .cesium-viewer-timelineContainer,
+        .cesium-viewer-fullscreenContainer,
+        .cesium-viewer-bottom {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    <script>
+    "use strict";
+
+    let viewer = null;
+    let vehicleEntities = {};
+    let vehicleShadows = {};
+    let vehicleLabels = {};
+    let vehicleLines = {};
+    let trajectoryEntity = null;
+    let missionPolyline = null;
+    let missionWaypoints = [];
+    let homeEntity = null;
+    let homeShadow = null;
+    let gotoEntity = null;
+    let gotoRingEntity = null;
+
+    let qgcBridge = null;
+    let _bridgeReady = false;
+    let _cesiumInitialized = false;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        if (typeof QWebChannel !== "undefined" && typeof qt !== "undefined") {
+            new QWebChannel(qt.webChannelTransport, function (channel) {
+                qgcBridge = channel.objects.qgcBridge;
+                _bridgeReady = true;
+                if (_cesiumInitialized && qgcBridge) {
+                    qgcBridge.cesiumReady();
+                }
+            });
+        }
+    });
+
+    // QGC vehicle arrow icon
+    function createVehicleIcon() {
+        var size = 64;
+        var canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        var ctx = canvas.getContext("2d");
+        var s = size / 72;
+        ctx.beginPath();
+        ctx.moveTo(35.5*s, 2.118*s); ctx.lineTo(35.5*s, 53.691*s); ctx.lineTo(1.118*s, 70.882*s);
+        ctx.closePath(); ctx.fillStyle = "#c72b27"; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(36.5*s, 2.118*s); ctx.lineTo(36.5*s, 53.691*s); ctx.lineTo(70.882*s, 70.882*s);
+        ctx.closePath(); ctx.fillStyle = "#ee3424"; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(36*s, 0); ctx.lineTo(0, 72*s); ctx.lineTo(36*s, 54*s); ctx.lineTo(72*s, 72*s);
+        ctx.closePath(); ctx.strokeStyle = "#7f0036"; ctx.lineWidth = 1.5; ctx.stroke();
+        return canvas.toDataURL("image/png");
+    }
+
+    var VEHICLE_ICON = null;
+
+    function initCesium(token) {
+        Cesium.Ion.defaultAccessToken = token;
+        viewer = new Cesium.Viewer("cesiumContainer", {
+            terrain: Cesium.Terrain.fromWorldTerrain(),
+            animation: false, timeline: false, fullscreenButton: false,
+            vrButton: false, geocoder: false, homeButton: false,
+            infoBox: false, sceneModePicker: false, selectionIndicator: false,
+            navigationHelpButton: false, baseLayerPicker: false,
+            creditContainer: document.createElement("div"),
+        });
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+        VEHICLE_ICON = createVehicleIcon();
+
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(127.0, 37.5, 5000000),
+        });
+
+        // Right-click → QML
+        viewer.screenSpaceEventHandler.setInputAction(function (click) {
+            var ray = viewer.camera.getPickRay(click.position);
+            var cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+            if (!cartesian) return;
+            var carto = Cesium.Cartographic.fromCartesian(cartesian);
+            if (qgcBridge) {
+                qgcBridge.mapClicked(
+                    Cesium.Math.toDegrees(carto.latitude),
+                    Cesium.Math.toDegrees(carto.longitude),
+                    carto.height,
+                    click.position.x, click.position.y
+                );
+            }
+        }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+        _cesiumInitialized = true;
+        if (_bridgeReady && qgcBridge) qgcBridge.cesiumReady();
+    }
+
+    // ===============================================================
+    // Vehicle: billboard with heightReference: RELATIVE_TO_GROUND
+    //   + ground shadow ellipse (CLAMP_TO_GROUND, heading-oriented)
+    //   + vertical altitude line
+    // NO alignedAxis, NO disableDepthTestDistance
+    // ===============================================================
+    function updateVehiclePosition(vehicleId, lat, lon, alt, heading) {
+        if (!viewer) return;
+        heading = heading || 0;
+        var position = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+
+
+        var groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+        var rotRad = Cesium.Math.toRadians(heading);
+        var hpr = new Cesium.HeadingPitchRoll(rotRad, 0, 0);
+        var orient = Cesium.Transforms.headingPitchRollQuaternion(groundPos, hpr);
+
+        if (vehicleEntities[vehicleId]) {
+            vehicleEntities[vehicleId].position = position;
+            vehicleEntities[vehicleId].billboard.rotation = -rotRad;
+            if (vehicleShadows[vehicleId]) {
+                vehicleShadows[vehicleId].position = groundPos;
+                vehicleShadows[vehicleId].orientation = orient;
+            }
+            if (vehicleLabels[vehicleId]) {
+                vehicleLabels[vehicleId].position = position;
+            }
+            if (vehicleLines[vehicleId]) {
+                vehicleLines[vehicleId].polyline.positions = [groundPos, position];
+            }
+        } else {
+            // Billboard: heightReference does the terrain math for us
+            vehicleEntities[vehicleId] = viewer.entities.add({
+                id: "vehicle_" + vehicleId,
+                position: position,
+                billboard: {
+                    image: VEHICLE_ICON,
+                    width: 48, height: 48,
+                    rotation: -rotRad,
+                    verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                    horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                },
+            });
+
+            vehicleLabels[vehicleId] = viewer.entities.add({
+                id: "vehicle_label_" + vehicleId,
+                position: position,
+                label: {
+                    text: "UAV " + vehicleId,
+                    font: "13px bold sans-serif",
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    outlineWidth: 2,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    pixelOffset: new Cesium.Cartesian2(0, -30),
+                    fillColor: Cesium.Color.WHITE,
+                    outlineColor: Cesium.Color.BLACK,
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.fromCssColorString("#e74c3c"), 0.8),
+                    backgroundPadding: new Cesium.Cartesian2(6, 4),
+                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                },
+            });
+
+            // Vertical line: ground → vehicle (altitude indicator in 3D)
+            vehicleLines[vehicleId] = viewer.entities.add({
+                id: "vehicle_line_" + vehicleId,
+                polyline: {
+                    positions: [groundPos, position],
+                    width: 1,
+                    material: Cesium.Color.WHITE.withAlpha(0.4),
+                    clampToGround: false,
+                },
+            });
+
+            // Ground shadow: heading ellipse (this reliably works with CLAMP_TO_GROUND)
+            vehicleShadows[vehicleId] = viewer.entities.add({
+                id: "vehicle_shadow_" + vehicleId,
+                position: groundPos,
+                orientation: orient,
+                ellipse: {
+                    semiMajorAxis: 4, semiMinorAxis: 2.5,
+                    material: Cesium.Color.RED.withAlpha(0.35),
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+            });
+        }
+    }
+
+    // ===============================================================
+    // Camera
+    // ===============================================================
+    function flyToVehicle(vehicleId) {
+        if (!viewer || !vehicleEntities[vehicleId]) return;
+        var pos = vehicleEntities[vehicleId].position.getValue(viewer.clock.currentTime);
+        if (!pos) return;
+        var carto = Cesium.Cartographic.fromCartesian(pos);
+        viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude), 500),
+            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
+            duration: 1.5,
+        });
+    }
+
+    function flyToLocation(lat, lon, alt) {
+        if (!viewer) return;
+        viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt || 1000),
+            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
+            duration: 1.5,
+        });
+    }
+
+    // ===============================================================
+    // Trajectory
+    // ===============================================================
+    var trajectoryPositions = [];
+    function addTrajectoryPoint(lat, lon, alt) {
+        if (!viewer) return;
+        trajectoryPositions.push(Cesium.Cartesian3.fromDegrees(lon, lat, alt));
+        if (!trajectoryEntity) {
+            trajectoryEntity = viewer.entities.add({
+                id: "trajectory",
+                polyline: {
+                    positions: new Cesium.CallbackProperty(function() { return trajectoryPositions; }, false),
+                    width: 3,
+                    material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.2, color: Cesium.Color.RED }),
+                },
+            });
+        }
+    }
+    function clearTrajectory() {
+        trajectoryPositions = [];
+        if (trajectoryEntity) { viewer.entities.remove(trajectoryEntity); trajectoryEntity = null; }
+    }
+
+    // ===============================================================
+    // Mission items: point + label with RELATIVE_TO_GROUND
+    // ===============================================================
+    function setMissionItems(itemsJson) {
+        if (!viewer) return;
+        missionWaypoints.forEach(function(e) { viewer.entities.remove(e); });
+        missionWaypoints = [];
+        if (missionPolyline) { viewer.entities.remove(missionPolyline); missionPolyline = null; }
+
+        var items = JSON.parse(itemsJson);
+        if (!items || items.length === 0) return;
+        var positions = [];
+
+        items.forEach(function(item, idx) {
+            var pos = Cesium.Cartesian3.fromDegrees(item.lon, item.lat, item.alt || 0);
+            positions.push(pos);
+            var isCurrent = item.current || false;
+            var isFirst = (idx === 0);
+            var color = isFirst ? Cesium.Color.GREEN : isCurrent ? Cesium.Color.ORANGE : Cesium.Color.DODGERBLUE;
+
+            var wp = viewer.entities.add({
+                id: "wp_" + item.seq,
+                position: pos,
+                point: {
+                    pixelSize: isCurrent ? 16 : 12,
+                    color: color,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 2,
+                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                },
+                label: {
+                    text: String(item.seq),
+                    font: "14px bold sans-serif",
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    outlineWidth: 2,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    pixelOffset: new Cesium.Cartesian2(0, -16),
+                    fillColor: Cesium.Color.WHITE,
+                    outlineColor: Cesium.Color.BLACK,
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.5),
+                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                },
+            });
+            missionWaypoints.push(wp);
+        });
+
+        if (positions.length > 1) {
+            missionPolyline = viewer.entities.add({
+                id: "mission_path",
+                polyline: { positions: positions, width: 3,
+                    material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.15, color: Cesium.Color.DODGERBLUE }),
+                },
+            });
+        }
+    }
+
+    // ===============================================================
+    // Home: point + label with CLAMP_TO_GROUND + ring ellipse
+    // ===============================================================
+    function setHomePosition(lat, lon, alt) {
+        if (!viewer) return;
+        var pos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+        if (homeEntity) {
+            homeEntity.position = pos;
+            if (homeShadow) homeShadow.position = pos;
+        } else {
+            homeShadow = viewer.entities.add({
+                id: "home_ring", position: pos,
+                ellipse: {
+                    semiMajorAxis: 5, semiMinorAxis: 5,
+                    material: Cesium.Color.LIME.withAlpha(0.25),
+                    outline: true, outlineColor: Cesium.Color.LIME, outlineWidth: 2,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+            });
+            homeEntity = viewer.entities.add({
+                id: "home", position: pos,
+                point: {
+                    pixelSize: 14, color: Cesium.Color.LIME,
+                    outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+                label: {
+                    text: "H", font: "14px bold sans-serif",
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, outlineWidth: 2,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    pixelOffset: new Cesium.Cartesian2(0, -16),
+                    fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK,
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.6),
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+            });
+        }
+    }
+
+    // ===============================================================
+    // Go-to indicator: ring + point + label (all CLAMP_TO_GROUND)
+    // ===============================================================
+    function showGotoIndicator(lat, lon, alt) {
+        if (!viewer) return;
+        var pos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+        if (gotoEntity) {
+            gotoEntity.position = pos; gotoEntity.show = true;
+            if (gotoRingEntity) { gotoRingEntity.position = pos; gotoRingEntity.show = true; }
+        } else {
+            gotoRingEntity = viewer.entities.add({
+                id: "goto_ring", position: pos,
+                ellipse: {
+                    semiMajorAxis: 8, semiMinorAxis: 8,
+                    material: Cesium.Color.YELLOW.withAlpha(0.25),
+                    outline: true, outlineColor: Cesium.Color.YELLOW, outlineWidth: 3,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+            });
+            gotoEntity = viewer.entities.add({
+                id: "goto_indicator", position: pos,
+                point: {
+                    pixelSize: 14, color: Cesium.Color.YELLOW,
+                    outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+                label: {
+                    text: "Go Here", font: "13px bold sans-serif",
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, outlineWidth: 2,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    pixelOffset: new Cesium.Cartesian2(0, -18),
+                    fillColor: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK,
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.7),
+                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                },
+            });
+        }
+    }
+    function hideGotoIndicator() {
+        if (gotoEntity) gotoEntity.show = false;
+        if (gotoRingEntity) gotoRingEntity.show = false;
+    }
+
+    // ===============================================================
+    // Remove vehicle
+    // ===============================================================
+    function removeVehicle(vehicleId) {
+        if (!viewer) return;
+        [vehicleEntities, vehicleLabels, vehicleShadows, vehicleLines].forEach(function(map) {
+            if (map[vehicleId]) { viewer.entities.remove(map[vehicleId]); delete map[vehicleId]; }
+        });
+    }
+    </script>
+</body>
+</html>

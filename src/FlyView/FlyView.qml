@@ -19,6 +19,7 @@ Item {
     id: _root
 
     readonly property bool _is3DMode: QGCViewer3DManager.displayMode === QGCViewer3DManager.View3D
+    readonly property bool _isCesium3DMode: QGCViewer3DManager.displayMode === QGCViewer3DManager.Cesium3D
 
     // These should only be used by MainRootWindow
     property var planController:    _planController
@@ -79,8 +80,22 @@ Item {
             pipMode:                !_mainWindowIsMap
             toolInsets:             customOverlay.totalToolInsets
             mapName:                "FlightDisplayView"
-            enabled:                !_is3DMode
-            visible:                !_is3DMode
+            enabled:                !_is3DMode && !_isCesium3DMode
+            visible:                !_is3DMode && !_isCesium3DMode
+        }
+
+        Loader {
+            id:             cesium3DLoader
+            z:              1
+            anchors.fill:   parent
+            active:         _isCesium3DMode
+
+            onActiveChanged: {
+                if (active) {
+                    setSource("qrc:/qml/QGroundControl/Viewer3D/Cesium3DView.qml",
+                              { "planMasterController": _planController })
+                }
+            }
         }
 
         FlyViewVideo {

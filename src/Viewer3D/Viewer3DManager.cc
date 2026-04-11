@@ -35,7 +35,8 @@ void Viewer3DManager::setDisplayMode(DisplayMode mode)
     }
 
     _displayMode = mode;
-    qCDebug(Viewer3DManagerLog) << "Display mode changed to" << (mode == DisplayMode::View3D ? "View3D" : "Map");
+    static const char *modeNames[] = {"Map", "View3D", "Cesium3D"};
+    qCDebug(Viewer3DManagerLog) << "Display mode changed to" << modeNames[static_cast<int>(mode)];
     emit displayModeChanged();
 }
 

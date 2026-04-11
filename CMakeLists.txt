@@ -194,6 +194,8 @@ find_package(Qt6
         Quick3D
         StateMachine
     OPTIONAL_COMPONENTS
+        WebChannel
+        WebEngineQuick
         Bluetooth
         MultimediaQuickPrivate
         OpenGL
