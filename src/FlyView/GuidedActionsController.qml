@@ -548,9 +548,49 @@ Item {
         confirmDialog.show(showImmediate)
     }
 
+    // Map action codes to human-readable names for event broadcasting
+    function _actionName(code) {
+        var names = {}
+        names[actionRTL] = "rtl"
+        names[actionLand] = "land"
+        names[actionTakeoff] = "takeoff"
+        names[actionArm] = "arm"
+        names[actionDisarm] = "disarm"
+        names[actionEmergencyStop] = "emergency_stop"
+        names[actionChangeAlt] = "change_altitude"
+        names[actionGoto] = "goto"
+        names[actionSetWaypoint] = "set_waypoint"
+        names[actionOrbit] = "orbit"
+        names[actionLandAbort] = "land_abort"
+        names[actionStartMission] = "start_mission"
+        names[actionContinueMission] = "continue_mission"
+        names[actionResumeMission] = "resume_mission"
+        names[actionPause] = "pause"
+        names[actionMVPause] = "mv_pause"
+        names[actionMVStartMission] = "mv_start_mission"
+        names[actionROI] = "roi"
+        names[actionForceArm] = "force_arm"
+        names[actionChangeSpeed] = "change_speed"
+        names[actionSetHome] = "set_home"
+        names[actionSetFlightMode] = "set_flight_mode"
+        names[actionChangeHeading] = "change_heading"
+        names[actionMVArm] = "mv_arm"
+        names[actionMVDisarm] = "mv_disarm"
+        names[actionChangeLoiterRadius] = "change_loiter_radius"
+        return names[code] || ("unknown_" + code)
+    }
+
     // Executes the specified action
     // Returns false if the action failed and any associated map indicator should be restored
     function executeAction(actionCode, actionData, sliderOutputValue, optionChecked) {
+        // Broadcast event to external listeners
+        EventBroadcaster.sendEvent("action", _actionName(actionCode), {
+            "actionCode": actionCode,
+            "sliderValue": sliderOutputValue || 0,
+            "optionChecked": optionChecked || false,
+            "vehicleId": _activeVehicle ? _activeVehicle.id : -1
+        })
+
         var i;
         var selectedVehicles;
         switch (actionCode) {
