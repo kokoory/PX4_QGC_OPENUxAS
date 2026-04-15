@@ -8,9 +8,15 @@ EventBroadcaster *EventBroadcaster::_instance = nullptr;
 EventBroadcaster::EventBroadcaster(QObject *parent)
     : QObject(parent)
     , _socket(new QUdpSocket(this))
+    , _receiveSocket(new QUdpSocket(this))
 {
     _instance = this;
-    qCDebug(EventBroadcasterLog) << "EventBroadcaster initialized, broadcasting on port" << _broadcastPort;
+
+    _bindReceiveSocket();
+    connect(_receiveSocket, &QUdpSocket::readyRead, this, &EventBroadcaster::_onReadyRead);
+
+    qCDebug(EventBroadcasterLog) << "EventBroadcaster initialized, broadcasting on port" << _broadcastPort
+                                 << ", receiving on port" << _receivePort;
 }
 
 EventBroadcaster::~EventBroadcaster()
@@ -56,10 +62,69 @@ void EventBroadcaster::setBroadcastPort(quint16 port)
     qCDebug(EventBroadcasterLog) << "Broadcast port changed to" << port;
 }
 
+void EventBroadcaster::setReceivePort(quint16 port)
+{
+    if (_receivePort == port) {
+        return;
+    }
+    _receivePort = port;
+    _bindReceiveSocket();
+    qCDebug(EventBroadcasterLog) << "Receive port changed to" << port;
+}
+
 void EventBroadcaster::setEnabled(bool enabled)
 {
     _enabled = enabled;
     qCDebug(EventBroadcasterLog) << "Broadcasting" << (enabled ? "enabled" : "disabled");
+}
+
+void EventBroadcaster::_onReadyRead()
+{
+    while (_receiveSocket->hasPendingDatagrams()) {
+        QByteArray datagram;
+        datagram.resize(_receiveSocket->pendingDatagramSize());
+        QHostAddress sender;
+        quint16 senderPort;
+        _receiveSocket->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
+
+        qCDebug(EventBroadcasterLog) << "Received datagram from" << sender.toString() << ":" << senderPort
+                                     << "size:" << datagram.size();
+
+        const QJsonDocument doc = QJsonDocument::fromJson(datagram);
+        if (!doc.isObject()) {
+            qCWarning(EventBroadcasterLog) << "Received invalid JSON command:" << datagram;
+            continue;
+        }
+
+        const QJsonObject json = doc.object();
+        const QString action = json.value("action").toString();
+        if (action.isEmpty()) {
+            qCWarning(EventBroadcasterLog) << "Received command without 'action' field:" << datagram;
+            continue;
+        }
+
+        // Build params map from all fields except "action"
+        QVariantMap params;
+        for (auto it = json.constBegin(); it != json.constEnd(); ++it) {
+            if (it.key() != "action") {
+                params.insert(it.key(), it.value().toVariant());
+            }
+        }
+
+        qCDebug(EventBroadcasterLog) << "Command received - action:" << action << "params:" << params;
+        emit commandReceived(action, params);
+    }
+}
+
+void EventBroadcaster::_bindReceiveSocket()
+{
+    _receiveSocket->close();
+    if (!_receiveSocket->bind(QHostAddress::Any, _receivePort, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+        qCWarning(EventBroadcasterLog) << "Failed to bind receive socket to port" << _receivePort
+                                       << ":" << _receiveSocket->errorString();
+    } else {
+        qCDebug(EventBroadcasterLog) << "Receive socket bound to port" << _receivePort;
+    }
 }
 
 void EventBroadcaster::_broadcast(const QByteArray &data)

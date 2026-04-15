@@ -350,6 +350,53 @@ Item {
         function onDisarmVehicleRequest() { disarmVehicleRequest() }
     }
 
+    Connections {
+        target: EventBroadcaster
+
+        function onCommandReceived(action, params) {
+            if (!_activeVehicle) {
+                console.warn("EventBroadcaster command received but no active vehicle:", action)
+                return
+            }
+
+            switch (action) {
+            case "arm":
+                executeAction(actionArm)
+                break
+            case "disarm":
+                executeAction(actionDisarm)
+                break
+            case "takeoff":
+                var alt = params["altitude"] !== undefined ? params["altitude"] : _activeVehicle.minimumTakeoffAltitudeMeters()
+                executeAction(actionTakeoff, undefined, alt)
+                break
+            case "land":
+                executeAction(actionLand)
+                break
+            case "rtl":
+                executeAction(actionRTL)
+                break
+            case "start_mission":
+                executeAction(actionStartMission)
+                break
+            case "pause":
+                executeAction(actionPause, undefined, _activeVehicle.altitudeRelative.rawValue)
+                break
+            case "set_mode":
+                var mode = params["mode"]
+                if (mode) {
+                    executeAction(actionSetFlightMode, mode)
+                } else {
+                    console.warn("EventBroadcaster set_mode command missing 'mode' parameter")
+                }
+                break
+            default:
+                console.warn("EventBroadcaster unknown command action:", action)
+                break
+            }
+        }
+    }
+
     function armVehicleRequest() {
         confirmAction(actionArm)
     }
