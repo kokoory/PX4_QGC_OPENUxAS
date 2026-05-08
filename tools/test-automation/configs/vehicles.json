@@ -1,0 +1,247 @@
+{
+  "description": "PX4 SITL vehicle fleet configuration for test automation",
+  "version": "1.0",
+  "defaults": {
+    "firmware": "PX4",
+    "protocol": "MAVLink2",
+    "home_lat": 47.3977420,
+    "home_lon": 8.5455940,
+    "home_alt": 488.0
+  },
+  "vehicles": [
+    {
+      "id": 0,
+      "name": "X500 Quadcopter",
+      "model": "gz_x500",
+      "type": "multicopter",
+      "description": "Standard X500 quadcopter for baseline testing",
+      "spawn_pose": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14540,
+        "qgc_udp": 14550,
+        "mavlink_tcp": 4560,
+        "offboard_udp": 14580
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4001,
+        "COM_ARM_EKF_AB": 0.01
+      }
+    },
+    {
+      "id": 1,
+      "name": "X500 Depth Camera",
+      "model": "gz_x500_depth",
+      "type": "multicopter",
+      "description": "X500 with depth camera for obstacle avoidance testing",
+      "spawn_pose": {
+        "x": 3,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14541,
+        "qgc_udp": 14551,
+        "mavlink_tcp": 4561,
+        "offboard_udp": 14581
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4001,
+        "COM_ARM_EKF_AB": 0.01
+      }
+    },
+    {
+      "id": 2,
+      "name": "X500 Vision",
+      "model": "gz_x500_vision",
+      "type": "multicopter",
+      "description": "X500 with vision system for visual navigation testing",
+      "spawn_pose": {
+        "x": 6,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14542,
+        "qgc_udp": 14552,
+        "mavlink_tcp": 4562,
+        "offboard_udp": 14582
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4001,
+        "COM_ARM_EKF_AB": 0.01
+      }
+    },
+    {
+      "id": 3,
+      "name": "RC Cessna",
+      "model": "gz_rc_cessna",
+      "type": "fixed_wing",
+      "description": "RC Cessna fixed-wing for airplane flight testing",
+      "spawn_pose": {
+        "x": 10,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14543,
+        "qgc_udp": 14553,
+        "mavlink_tcp": 4563,
+        "offboard_udp": 14583
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 2100,
+        "FW_AIRSPD_MIN": 10,
+        "FW_AIRSPD_MAX": 25
+      }
+    },
+    {
+      "id": 4,
+      "name": "Standard VTOL",
+      "model": "gz_standard_vtol",
+      "type": "vtol",
+      "description": "Standard VTOL for transition flight testing",
+      "spawn_pose": {
+        "x": 14,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14544,
+        "qgc_udp": 14554,
+        "mavlink_tcp": 4564,
+        "offboard_udp": 14584
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 13000,
+        "VT_TYPE": 2
+      }
+    },
+    {
+      "id": 5,
+      "name": "Tiltrotor VTOL",
+      "model": "gz_tiltrotor",
+      "type": "vtol",
+      "description": "Tiltrotor VTOL for advanced transition testing",
+      "spawn_pose": {
+        "x": 18,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14545,
+        "qgc_udp": 14555,
+        "mavlink_tcp": 4565,
+        "offboard_udp": 14585
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 13100,
+        "VT_TYPE": 1
+      }
+    },
+    {
+      "id": 6,
+      "name": "R1 Rover",
+      "model": "gz_r1_rover",
+      "type": "rover",
+      "description": "R1 ground rover for surface navigation testing",
+      "spawn_pose": {
+        "x": 22,
+        "y": 0,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14546,
+        "qgc_udp": 14556,
+        "mavlink_tcp": 4566,
+        "offboard_udp": 14586
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 50000,
+        "GND_SPEED_MAX": 10
+      }
+    },
+    {
+      "id": 7,
+      "name": "X500 LiDAR",
+      "model": "gz_x500_lidar",
+      "type": "multicopter",
+      "description": "X500 with LiDAR sensor for terrain mapping testing",
+      "spawn_pose": {
+        "x": 0,
+        "y": 5,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14547,
+        "qgc_udp": 14557,
+        "mavlink_tcp": 4567,
+        "offboard_udp": 14587
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4001,
+        "COM_ARM_EKF_AB": 0.01
+      }
+    },
+    {
+      "id": 8,
+      "name": "X500 Gimbal",
+      "model": "gz_x500_gimbal",
+      "type": "multicopter",
+      "description": "X500 with gimbal for camera control testing",
+      "spawn_pose": {
+        "x": 3,
+        "y": 5,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14548,
+        "qgc_udp": 14558,
+        "mavlink_tcp": 4568,
+        "offboard_udp": 14588
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4001,
+        "MNT_MODE_IN": 0,
+        "MNT_MODE_OUT": 1
+      }
+    },
+    {
+      "id": 9,
+      "name": "Advanced Plane",
+      "model": "gz_advanced_plane",
+      "type": "fixed_wing",
+      "description": "Advanced fixed-wing plane for complex flight testing",
+      "spawn_pose": {
+        "x": 10,
+        "y": 5,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14549,
+        "qgc_udp": 14559,
+        "mavlink_tcp": 4569,
+        "offboard_udp": 14589
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 2100,
+        "FW_AIRSPD_MIN": 12,
+        "FW_AIRSPD_MAX": 30,
+        "FW_AIRSPD_TRIM": 20
+      }
+    }
+  ]
+}

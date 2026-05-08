@@ -1,0 +1,189 @@
+# TC003 - Failsafe Test
+#
+# Validates failsafe behavior: connect, arm, takeoff to 25m, switch to
+# OFFBOARD mode, hold position for 10s, trigger RTL failsafe, verify
+# return to launch, land, disarm.
+#
+# 15 steps covering failsafe and mode-switching scenarios.
+
+name: "TC003 - Failsafe Test"
+description: "Verify failsafe behavior: OFFBOARD mode, RTL trigger, safe return and landing"
+version: "1.0"
+vehicle_types: ["multicopter", "vtol"]
+estimated_duration_s: 240
+tags: ["failsafe", "safety", "offboard"]
+
+steps:
+  - name: "Connect to vehicle"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 30
+    expect:
+      ack: true
+    timeout_s: 30
+    on_fail: abort
+
+  - name: "Wait for GPS fix"
+    action: wait_event
+    params:
+      match:
+        category: "sensor"
+        event: "gps_fix"
+      timeout: 60
+    expect:
+      event:
+        category: "sensor"
+        event: "gps_fix"
+    timeout_s: 60
+    on_fail: abort
+
+  - name: "Arm vehicle"
+    action: send_command
+    params:
+      command: arm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "arm"
+    timeout_s: 15
+    on_fail: abort
+
+  - name: "Verify armed state"
+    action: wait_state
+    params:
+      check: armed
+      value: true
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: abort
+
+  - name: "Takeoff to 25m"
+    action: send_command
+    params:
+      command: takeoff
+      altitude: 25
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Verify takeoff altitude"
+    action: check_altitude
+    params:
+      target: 25
+      tolerance: 3
+      timeout: 60
+    expect:
+      altitude:
+        target: 25
+        tolerance: 3
+    timeout_s: 60
+    on_fail: emergency_land
+
+  - name: "Switch to OFFBOARD mode"
+    action: send_command
+    params:
+      command: set_mode
+      mode: offboard
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Verify OFFBOARD mode active"
+    action: wait_state
+    params:
+      check: mode
+      value: 6
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: continue
+
+  - name: "Hold position in OFFBOARD for 10s"
+    action: sleep
+    params:
+      duration: 10
+    expect:
+      ack: true
+    timeout_s: 15
+    on_fail: continue
+
+  - name: "Verify altitude maintained during OFFBOARD"
+    action: check_altitude
+    params:
+      target: 25
+      tolerance: 5
+      timeout: 10
+    expect:
+      altitude:
+        target: 25
+        tolerance: 5
+    timeout_s: 10
+    on_fail: continue
+
+  - name: "Trigger RTL failsafe"
+    action: send_command
+    params:
+      command: rtl
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "rtl"
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Verify vehicle returning to launch"
+    action: wait_event
+    params:
+      match:
+        category: "navigation"
+        event: "rtl_active"
+      timeout: 30
+    expect:
+      event:
+        category: "navigation"
+        event: "rtl_active"
+    timeout_s: 30
+    on_fail: continue
+
+  - name: "Wait for landing"
+    action: wait_state
+    params:
+      check: on_ground
+      value: true
+      timeout: 120
+    expect:
+      ack: true
+    timeout_s: 120
+    on_fail: emergency_land
+
+  - name: "Disarm vehicle"
+    action: send_command
+    params:
+      command: disarm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "disarm"
+    timeout_s: 30
+    on_fail: continue
+
+  - name: "Verify disarmed state"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: continue

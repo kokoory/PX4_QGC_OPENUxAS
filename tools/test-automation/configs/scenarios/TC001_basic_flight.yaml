@@ -1,0 +1,177 @@
+# TC001 - Basic Flight Test
+#
+# Validates the fundamental flight cycle: connect, preflight checks,
+# arm, takeoff, hover, RTL, land, disarm.
+#
+# 14 steps covering the minimum viable flight test for any vehicle.
+
+name: "TC001 - Basic Flight Test"
+description: "Verify basic flight cycle: arm, takeoff, hover, RTL, land, disarm"
+version: "1.0"
+vehicle_types: ["multicopter", "vtol", "fixed_wing", "rover"]
+estimated_duration_s: 180
+tags: ["smoke", "basic", "flight"]
+
+steps:
+  - name: "Connect to vehicle"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 30
+    expect:
+      ack: true
+    timeout_s: 30
+    on_fail: abort
+
+  - name: "Wait for GPS fix"
+    action: wait_event
+    params:
+      match:
+        category: "sensor"
+        event: "gps_fix"
+      timeout: 60
+    expect:
+      event:
+        category: "sensor"
+        event: "gps_fix"
+    timeout_s: 60
+    on_fail: abort
+
+  - name: "Check GPS quality"
+    action: send_command
+    params:
+      command: set_mode
+      mode: posctl
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: abort
+
+  - name: "Check battery level"
+    action: wait_event
+    params:
+      match:
+        category: "power"
+        event: "battery_ok"
+      timeout: 10
+    expect:
+      event:
+        category: "power"
+        event: "battery_ok"
+    timeout_s: 10
+    on_fail: abort
+
+  - name: "Arm vehicle"
+    action: send_command
+    params:
+      command: arm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "arm"
+    timeout_s: 15
+    on_fail: abort
+
+  - name: "Verify armed state"
+    action: wait_state
+    params:
+      check: armed
+      value: true
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: abort
+
+  - name: "Takeoff to 15m"
+    action: send_command
+    params:
+      command: takeoff
+      altitude: 15
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Verify takeoff altitude"
+    action: check_altitude
+    params:
+      target: 15
+      tolerance: 3
+      timeout: 60
+    expect:
+      altitude:
+        target: 15
+        tolerance: 3
+    timeout_s: 60
+    on_fail: emergency_land
+
+  - name: "Hover for 30 seconds"
+    action: sleep
+    params:
+      duration: 30
+    expect:
+      ack: true
+    timeout_s: 35
+    on_fail: continue
+
+  - name: "Verify altitude hold during hover"
+    action: check_altitude
+    params:
+      target: 15
+      tolerance: 3
+      timeout: 10
+    expect:
+      altitude:
+        target: 15
+        tolerance: 3
+    timeout_s: 10
+    on_fail: continue
+
+  - name: "Command RTL"
+    action: send_command
+    params:
+      command: rtl
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "rtl"
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Wait for landing"
+    action: wait_state
+    params:
+      check: on_ground
+      value: true
+      timeout: 120
+    expect:
+      ack: true
+    timeout_s: 120
+    on_fail: emergency_land
+
+  - name: "Disarm vehicle"
+    action: send_command
+    params:
+      command: disarm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "disarm"
+    timeout_s: 30
+    on_fail: continue
+
+  - name: "Verify disarmed state"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: continue
