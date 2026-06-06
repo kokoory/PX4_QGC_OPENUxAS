@@ -350,6 +350,53 @@ Item {
         function onDisarmVehicleRequest() { disarmVehicleRequest() }
     }
 
+    Connections {
+        target: EventBroadcaster
+
+        function onCommandReceived(action, params) {
+            if (!_activeVehicle) {
+                console.warn("EventBroadcaster command received but no active vehicle:", action)
+                return
+            }
+
+            switch (action) {
+            case "arm":
+                executeAction(actionArm)
+                break
+            case "disarm":
+                executeAction(actionDisarm)
+                break
+            case "takeoff":
+                var alt = params["altitude"] !== undefined ? params["altitude"] : _activeVehicle.minimumTakeoffAltitudeMeters()
+                executeAction(actionTakeoff, undefined, alt)
+                break
+            case "land":
+                executeAction(actionLand)
+                break
+            case "rtl":
+                executeAction(actionRTL)
+                break
+            case "start_mission":
+                executeAction(actionStartMission)
+                break
+            case "pause":
+                executeAction(actionPause, undefined, _activeVehicle.altitudeRelative.rawValue)
+                break
+            case "set_mode":
+                var mode = params["mode"]
+                if (mode) {
+                    executeAction(actionSetFlightMode, mode)
+                } else {
+                    console.warn("EventBroadcaster set_mode command missing 'mode' parameter")
+                }
+                break
+            default:
+                console.warn("EventBroadcaster unknown command action:", action)
+                break
+            }
+        }
+    }
+
     function armVehicleRequest() {
         confirmAction(actionArm)
     }
@@ -548,9 +595,49 @@ Item {
         confirmDialog.show(showImmediate)
     }
 
+    // Map action codes to human-readable names for event broadcasting
+    function _actionName(code) {
+        var names = {}
+        names[actionRTL] = "rtl"
+        names[actionLand] = "land"
+        names[actionTakeoff] = "takeoff"
+        names[actionArm] = "arm"
+        names[actionDisarm] = "disarm"
+        names[actionEmergencyStop] = "emergency_stop"
+        names[actionChangeAlt] = "change_altitude"
+        names[actionGoto] = "goto"
+        names[actionSetWaypoint] = "set_waypoint"
+        names[actionOrbit] = "orbit"
+        names[actionLandAbort] = "land_abort"
+        names[actionStartMission] = "start_mission"
+        names[actionContinueMission] = "continue_mission"
+        names[actionResumeMission] = "resume_mission"
+        names[actionPause] = "pause"
+        names[actionMVPause] = "mv_pause"
+        names[actionMVStartMission] = "mv_start_mission"
+        names[actionROI] = "roi"
+        names[actionForceArm] = "force_arm"
+        names[actionChangeSpeed] = "change_speed"
+        names[actionSetHome] = "set_home"
+        names[actionSetFlightMode] = "set_flight_mode"
+        names[actionChangeHeading] = "change_heading"
+        names[actionMVArm] = "mv_arm"
+        names[actionMVDisarm] = "mv_disarm"
+        names[actionChangeLoiterRadius] = "change_loiter_radius"
+        return names[code] || ("unknown_" + code)
+    }
+
     // Executes the specified action
     // Returns false if the action failed and any associated map indicator should be restored
     function executeAction(actionCode, actionData, sliderOutputValue, optionChecked) {
+        // Broadcast event to external listeners
+        EventBroadcaster.sendEvent("action", _actionName(actionCode), {
+            "actionCode": actionCode,
+            "sliderValue": sliderOutputValue || 0,
+            "optionChecked": optionChecked || false,
+            "vehicleId": _activeVehicle ? _activeVehicle.id : -1
+        })
+
         var i;
         var selectedVehicles;
         switch (actionCode) {

@@ -23,6 +23,7 @@ ToolIndicatorPage {
                 imageResource: "/res/FlyingPaperPlane.svg"
                 onClicked: {
                     if (mainWindow.allowViewSwitch()) {
+                        EventBroadcaster.sendEvent("view", "fly_view")
                         mainWindow.closeIndicatorDrawer()
                         mainWindow.showFlyView()
                     }
@@ -36,6 +37,7 @@ ToolIndicatorPage {
                 imageResource: "/qmlimages/Plan.svg"
                 onClicked: {
                     if (mainWindow.allowViewSwitch()) {
+                        EventBroadcaster.sendEvent("view", "plan_view")
                         mainWindow.closeIndicatorDrawer()
                         mainWindow.showPlanView()
                     }
@@ -50,6 +52,7 @@ ToolIndicatorPage {
                 visible: QGroundControl.corePlugin.showAdvancedUI
                 onClicked: {
                     if (mainWindow.allowViewSwitch()) {
+                        EventBroadcaster.sendEvent("view", "analyze_view")
                         mainWindow.closeIndicatorDrawer()
                         mainWindow.showAnalyzeTool()
                     }
@@ -64,6 +67,7 @@ ToolIndicatorPage {
                 imageResource: "/res/GearWithPaperPlane.svg"
                 onClicked: {
                     if (mainWindow.allowViewSwitch()) {
+                        EventBroadcaster.sendEvent("view", "configure_view")
                         mainWindow.closeIndicatorDrawer()
                         mainWindow.showVehicleConfig()
                     }
@@ -79,6 +83,7 @@ ToolIndicatorPage {
                 visible: !QGroundControl.corePlugin.options.combineSettingsAndSetup
                 onClicked: {
                     if (mainWindow.allowViewSwitch()) {
+                        EventBroadcaster.sendEvent("view", "settings_view")
                         mainWindow.closeIndicatorDrawer()
                         mainWindow.showSettingsTool()
                     }

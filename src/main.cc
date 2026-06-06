@@ -24,6 +24,16 @@ int main(int argc, char *argv[])
 
 #ifdef QGC_CESIUM3D_ENABLED
     // --- WebEngine initialization (must be called before QApplication) ---
+    // On Ubuntu 24.04+ kernel.apparmor_restrict_unprivileged_userns=1 blocks the
+    // Chromium sandbox when QtWebEngineProcess lives outside an AppArmor profile
+    // (e.g. a user-installed Qt under $HOME). Disable the sandbox unless the user
+    // has set their own value, otherwise the GPU/renderer process crashes on spawn.
+#ifdef Q_OS_LINUX
+    if (!qEnvironmentVariableIsSet("QTWEBENGINE_DISABLE_SANDBOX")
+        && !qEnvironmentVariableIsSet("QTWEBENGINE_CHROMIUM_FLAGS")) {
+        qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+    }
+#endif
     QtWebEngineQuick::initialize();
 #endif
 

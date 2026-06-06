@@ -30,6 +30,8 @@ target_sources(${CMAKE_PROJECT_NAME}
         QGCLogging.h
         QGCLoggingCategory.cc
         QGCLoggingCategory.h
+        EventBroadcaster.cc
+        EventBroadcaster.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME}

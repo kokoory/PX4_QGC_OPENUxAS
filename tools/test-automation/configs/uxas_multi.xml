@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!--
+  UxAS configuration for QGC + multi-vehicle mixed fleet.
+  Pairs with tools/test-automation/configs/vehicles.json fleet "mixed_full"
+  (IDs 1, 2, 3 multicopter + 4, 10 fixed-wing).
+
+  External bridge endpoints:
+    - tcp://*:5560 (PUB)  : UxAS -> external (bridges SUB to this)
+    - tcp://*:5561 (PULL) : external -> UxAS (bridges PUSH to this)
+
+  Run from this directory:
+    /home/donghoon/myclaude/OpenUxAS/obj/cpp/uxas \
+        -cfgPath /path/to/uxas_multi.xml -runUntil 600
+-->
+<UxAS EntityID="100" FormatVersion="1.0" EntityType="Aircraft">
+
+    <!-- External LMCP bridge (Python qgc_uxas_bridge.py connects here) -->
+    <Bridge Type="LmcpObjectNetworkPublishPullBridge"
+            AddressPUB="tcp://*:5560"
+            AddressPULL="tcp://*:5561"
+            ConsiderSelfGenerated="TRUE">
+        <!-- LMCP types we want to forward over the external PUB/PULL pair.
+             SubscribeToMessage lists the message types this bridge will
+             re-broadcast on the external PUB and accept on the external PULL. -->
+        <SubscribeToMessage MessageType="afrl.cmasi.AirVehicleConfiguration" />
+        <SubscribeToMessage MessageType="afrl.cmasi.AirVehicleState" />
+        <SubscribeToMessage MessageType="afrl.cmasi.AreaSearchTask" />
+        <SubscribeToMessage MessageType="afrl.cmasi.LineSearchTask" />
+        <SubscribeToMessage MessageType="afrl.cmasi.PointSearchTask" />
+        <SubscribeToMessage MessageType="afrl.cmasi.AutomationRequest" />
+        <SubscribeToMessage MessageType="afrl.cmasi.AutomationResponse" />
+        <SubscribeToMessage MessageType="afrl.cmasi.MissionCommand" />
+        <SubscribeToMessage MessageType="afrl.cmasi.KeepInZone" />
+        <SubscribeToMessage MessageType="afrl.cmasi.KeepOutZone" />
+        <SubscribeToMessage MessageType="afrl.cmasi.OperatingRegion" />
+        <SubscribeToMessage MessageType="afrl.cmasi.RemoveTasks" />
+        <SubscribeToMessage MessageType="afrl.cmasi.SessionStatus" />
+        <SubscribeToMessage MessageType="afrl.cmasi.ServiceStatus" />
+    </Bridge>
+
+    <!-- Core task / route / assignment services.
+         These are the pieces that turn an AutomationRequest into a
+         per-vehicle MissionCommand. -->
+    <Service Type="Test_SimulationTime"/>
+    <Service Type="AutomationRequestValidatorService" MaxResponseTime_ms="300000"/>
+    <Service Type="TaskManagerService"/>
+    <Service Type="SensorManagerService"/>
+    <Service Type="RouteAggregatorService"/>
+    <Service Type="RoutePlannerVisibilityService" MinimumWaypointSeparation_m="50.0"/>
+    <Service Type="PlanBuilderService"/>
+    <Service Type="AssignmentTreeBranchBoundService"
+             NumberNodesMaximum="1500" CostFunction="MINMAX"/>
+    <Service Type="AutomationDiagramDataService"/>
+
+    <!-- Vehicle-specific WaypointPlanManager.
+         One per vehicle ID; VehicleID must match the bridge --vehicle-id and
+         the LMCP AirVehicleConfiguration.ID published by the bridge.
+         For mixed_full fleet (vehicles.json): IDs 1,2,3 multicopter + 4,10 FW. -->
+    <Service Type="WaypointPlanManagerService" VehicleID="1"
+             NumberWaypointsToServe="512" NumberWaypointsOverlap="3"
+             param.turnType="TurnShort" AddLoiterToEndOfMission="TRUE"
+             AddLoiterToEndOfMissionAirSpeed_mps="0.0"/>
+    <Service Type="WaypointPlanManagerService" VehicleID="2"
+             NumberWaypointsToServe="512" NumberWaypointsOverlap="3"
+             param.turnType="TurnShort" AddLoiterToEndOfMission="TRUE"
+             AddLoiterToEndOfMissionAirSpeed_mps="0.0"/>
+    <Service Type="WaypointPlanManagerService" VehicleID="3"
+             NumberWaypointsToServe="512" NumberWaypointsOverlap="3"
+             param.turnType="TurnShort" AddLoiterToEndOfMission="TRUE"
+             AddLoiterToEndOfMissionAirSpeed_mps="0.0"/>
+    <Service Type="WaypointPlanManagerService" VehicleID="4"
+             NumberWaypointsToServe="512" NumberWaypointsOverlap="3"
+             param.turnType="FlyOver" AddLoiterToEndOfMission="TRUE"
+             AddLoiterToEndOfMissionAirSpeed_mps="18.0"/>
+    <Service Type="WaypointPlanManagerService" VehicleID="10"
+             NumberWaypointsToServe="512" NumberWaypointsOverlap="3"
+             param.turnType="FlyOver" AddLoiterToEndOfMission="TRUE"
+             AddLoiterToEndOfMissionAirSpeed_mps="22.0"/>
+
+</UxAS>

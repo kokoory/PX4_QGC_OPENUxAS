@@ -1,0 +1,259 @@
+# TC002 - Mission Flight Test
+#
+# Validates mission upload and autonomous execution: connect, upload a
+# 4-waypoint 50m square mission, arm, start mission, verify each waypoint
+# is reached, RTL, land, disarm.
+#
+# 18 steps covering a full autonomous mission flight cycle.
+
+name: "TC002 - Mission Flight Test"
+description: "Upload 4-waypoint 50m square mission, execute autonomously, verify waypoints, RTL, land"
+version: "1.0"
+vehicle_types: ["multicopter", "vtol", "fixed_wing"]
+estimated_duration_s: 300
+tags: ["mission", "autonomous", "waypoint"]
+
+steps:
+  - name: "Connect to vehicle"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 30
+    expect:
+      ack: true
+    timeout_s: 30
+    on_fail: abort
+
+  - name: "Wait for GPS fix"
+    action: wait_event
+    params:
+      match:
+        category: "sensor"
+        event: "gps_fix"
+      timeout: 60
+    expect:
+      event:
+        category: "sensor"
+        event: "gps_fix"
+    timeout_s: 60
+    on_fail: abort
+
+  - name: "Upload 4-waypoint square mission"
+    action: upload_mission
+    params:
+      items:
+        - lat: 47.3977420
+          lon: 8.5455940
+          alt: 15
+          command: 16
+          frame: 6
+          param1: 0
+          param2: 5
+          autocontinue: 1
+        - lat: 47.3981910
+          lon: 8.5455940
+          alt: 15
+          command: 16
+          frame: 6
+          param1: 0
+          param2: 5
+          autocontinue: 1
+        - lat: 47.3981910
+          lon: 8.5462490
+          alt: 15
+          command: 16
+          frame: 6
+          param1: 0
+          param2: 5
+          autocontinue: 1
+        - lat: 47.3977420
+          lon: 8.5462490
+          alt: 15
+          command: 16
+          frame: 6
+          param1: 0
+          param2: 5
+          autocontinue: 1
+    expect:
+      ack: true
+    timeout_s: 30
+    on_fail: abort
+
+  - name: "Verify mission uploaded"
+    action: wait_event
+    params:
+      match:
+        category: "mission"
+        event: "upload_complete"
+      timeout: 10
+    expect:
+      event:
+        category: "mission"
+        event: "upload_complete"
+    timeout_s: 10
+    on_fail: continue
+
+  - name: "Arm vehicle"
+    action: send_command
+    params:
+      command: arm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "arm"
+    timeout_s: 15
+    on_fail: abort
+
+  - name: "Verify armed state"
+    action: wait_state
+    params:
+      check: armed
+      value: true
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: abort
+
+  - name: "Set AUTO mission mode"
+    action: send_command
+    params:
+      command: set_mode
+      mode: auto_mission
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Takeoff to mission altitude"
+    action: send_command
+    params:
+      command: takeoff
+      altitude: 15
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Verify takeoff altitude"
+    action: check_altitude
+    params:
+      target: 15
+      tolerance: 3
+      timeout: 60
+    expect:
+      altitude:
+        target: 15
+        tolerance: 3
+    timeout_s: 60
+    on_fail: emergency_land
+
+  - name: "Verify waypoint 1 reached"
+    action: check_position
+    params:
+      lat: 47.3977420
+      lon: 8.5455940
+      radius: 10
+      timeout: 90
+    expect:
+      ack: true
+    timeout_s: 90
+    on_fail: continue
+
+  - name: "Verify waypoint 2 reached"
+    action: check_position
+    params:
+      lat: 47.3981910
+      lon: 8.5455940
+      radius: 10
+      timeout: 90
+    expect:
+      ack: true
+    timeout_s: 90
+    on_fail: continue
+
+  - name: "Verify waypoint 3 reached"
+    action: check_position
+    params:
+      lat: 47.3981910
+      lon: 8.5462490
+      radius: 10
+      timeout: 90
+    expect:
+      ack: true
+    timeout_s: 90
+    on_fail: continue
+
+  - name: "Verify waypoint 4 reached"
+    action: check_position
+    params:
+      lat: 47.3977420
+      lon: 8.5462490
+      radius: 10
+      timeout: 90
+    expect:
+      ack: true
+    timeout_s: 90
+    on_fail: continue
+
+  - name: "Wait for mission completion"
+    action: wait_event
+    params:
+      match:
+        category: "mission"
+        event: "complete"
+      timeout: 120
+    expect:
+      event:
+        category: "mission"
+        event: "complete"
+    timeout_s: 120
+    on_fail: continue
+
+  - name: "Command RTL"
+    action: send_command
+    params:
+      command: rtl
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "rtl"
+    timeout_s: 10
+    on_fail: emergency_land
+
+  - name: "Wait for landing"
+    action: wait_state
+    params:
+      check: on_ground
+      value: true
+      timeout: 120
+    expect:
+      ack: true
+    timeout_s: 120
+    on_fail: emergency_land
+
+  - name: "Disarm vehicle"
+    action: send_command
+    params:
+      command: disarm
+    expect:
+      ack: true
+      event:
+        category: "action"
+        event: "disarm"
+    timeout_s: 30
+    on_fail: continue
+
+  - name: "Verify disarmed state"
+    action: wait_state
+    params:
+      check: armed
+      value: false
+      timeout: 10
+    expect:
+      ack: true
+    timeout_s: 10
+    on_fail: continue

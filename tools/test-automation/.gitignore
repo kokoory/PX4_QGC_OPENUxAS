@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+
+# lmcp_py/ is LmcpGen-generated but committed intentionally so a fresh clone
+# runs without Java/LmcpGen (regenerate: see docs/QGC_TestAutomation_Manual.md)
+lmcp_py/**/__pycache__/
+
+# Generated docs (rebuild via `python3 docs/build_pdf.py`)
+docs/QGC_TestAutomation_Manual.pdf
+docs/QGC_UxAS_MixedFleet_Report.pdf
+
+# Per-run logs
+logs/
