@@ -22,8 +22,21 @@ cd PX4_QGC_OPENUxAS && git submodule update --init --recursive   # QGC 빌드에
 
 ①〜⑤ 상세 명령은 `docs/QGC_TestAutomation_Manual.md` 참조.
 
-1. **PX4-Autopilot**: clone 후 `make px4_sitl_default` + Gazebo Harmonic 설치
-2. **OpenUxAS**: release build → `obj/cpp/uxas` 생성 확인 (LmcpGen.jar은 OpenUxAS infrastructure에 같이 빌드됨)
+1. **PX4-Autopilot** — 라이브 검증에 쓰인 정확한 베이스로 clone:
+   ```
+   git clone -b claude/knowledge-distillation-flight-fGsy1 --recursive \
+       https://github.com/kokoory/PX4-Autopilot.git
+   cd PX4-Autopilot
+   # x500 CA 로터 위치 보정 (라이브 비행이 이 패치 적용 상태로 검증됨; 구 호스트에선 uncommitted였음)
+   git apply <QGC>/tools/test-automation/configs/px4_patches/0001-x500-ca-rotor-positions.patch
+   make px4_sitl_default
+   ```
+   + Gazebo Harmonic 설치. (이 브랜치의 NN-control/distillation 코드는 별개 프로젝트 것 — EXTERNAL1 모드에서만 동작하므로 우리 mission 비행과 무간섭. upstream main으로 새로 받아도 되지만 버전 차이 리스크는 감수)
+2. **OpenUxAS** — fork의 develop이 정확한 베이스 (2026-06-06 push 완료, `--no-amase` flag 등 로컬 커밋 14개 포함):
+   ```
+   git clone -b develop https://github.com/kokoory/OpenUxAS.git
+   ```
+   release build → `obj/cpp/uxas` 생성 확인 (LmcpGen.jar은 OpenUxAS infrastructure에 같이 빌드됨)
 3. **lmcp_py 생성** (Java 1.8+ 필요):
    ```
    java -Xmx2048m -jar <OpenUxAS>/infrastructure/sbx/x86_64-linux/lmcpgen/install/LmcpGen.jar \

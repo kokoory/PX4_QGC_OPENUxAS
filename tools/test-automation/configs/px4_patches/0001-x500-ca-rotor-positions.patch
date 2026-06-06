@@ -1,0 +1,38 @@
+diff --git a/ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500 b/ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500
+index 2add7a5cb4..a6088fab61 100644
+--- a/ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500
++++ b/ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500
+@@ -16,20 +16,25 @@ param set-default SIM_GZ_EN 1
+ param set-default CA_AIRFRAME 0
+ param set-default CA_ROTOR_COUNT 4
+ 
+-param set-default CA_ROTOR0_PX 0.13
+-param set-default CA_ROTOR0_PY 0.22
++# Rotor positions adjusted to match the actual Gazebo x500_base SDF
++# rotor link poses: ±0.174 m on both axes (symmetric square X). The
++# original asymmetric values (±0.13, ±0.20-0.22) made PX4's CA invert
++# torque allocation against the wrong arm lengths, producing motor
++# commands that BC was learning as ground-truth despite the discrepancy.
++param set-default CA_ROTOR0_PX  0.174
++param set-default CA_ROTOR0_PY  0.174
+ param set-default CA_ROTOR0_KM  0.05
+ 
+-param set-default CA_ROTOR1_PX -0.13
+-param set-default CA_ROTOR1_PY -0.20
++param set-default CA_ROTOR1_PX -0.174
++param set-default CA_ROTOR1_PY -0.174
+ param set-default CA_ROTOR1_KM  0.05
+ 
+-param set-default CA_ROTOR2_PX 0.13
+-param set-default CA_ROTOR2_PY -0.22
++param set-default CA_ROTOR2_PX  0.174
++param set-default CA_ROTOR2_PY -0.174
+ param set-default CA_ROTOR2_KM -0.05
+ 
+-param set-default CA_ROTOR3_PX -0.13
+-param set-default CA_ROTOR3_PY 0.20
++param set-default CA_ROTOR3_PX -0.174
++param set-default CA_ROTOR3_PY  0.174
+ param set-default CA_ROTOR3_KM -0.05
+ 
+ param set-default SIM_GZ_EC_FUNC1 101
