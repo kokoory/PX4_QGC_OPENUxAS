@@ -289,6 +289,21 @@ python3 -u uxas_publish_task.py area \
 - 재빌드 후 env 없이 → 정상 (자동 우회 작동), Cesium↔Map 토글 반복에도 안정 (Loader 생명주기 문제 없음)
 - 한때 의심했던 빈 토큰 `initCesium("")`은 무관 (토큰 없으면 버튼이 Cesium3D 모드로 진입 자체를 안 함)
 
+**2026-06-07 Cesium 3D 개선 (현재 위치 + VWorld 한국 지도)**:
+- **현재 위치로 열림**: 기존엔 카메라가 한국 상공 5000 km 고정이라 "3D가 안 되는 것처럼" 보였음.
+  `Cesium3DView.qml`이 `QGroundControl.flightMapPosition`/`flightMapZoom`(2D 지도가 보던 중심/줌)을
+  읽어 `initCesium(token, vworldToken, lon, lat, height)`로 전달, -55° 피치로 같은 곳을 비춤
+  (zoom→height 변환 `_zoomToHeight`). 차량 연결 시엔 기존 fly-to-vehicle 타이머가 그 위로 덮어씀.
+- **VWorld 한국 지도 (브이월드)**: `addVWorldLayers(token)`이 VWorld WMTS를 Cesium imagery 레이어로
+  추가 — Satellite(고해상 위성 jpeg) + Hybrid(도로/한글 지명 png). Web Mercator·XYZ라
+  `WebMercatorTilingScheme` 그대로 매칭, `rectangle`을 한국(123~132.5E, 32~39.5N)으로 제한해
+  영역 밖 404 방지(밖은 Cesium World Imagery로 폴백). VWorld는 `Access-Control-Allow-Origin: *`라
+  WebGL 텍스처 CORS 통과 확인. 검증: 고흥 시뮬 지역에 한글 라벨("고흥호")까지 정상 렌더.
+- **VWorld 토큰 설정** (코드는 `appSettings.vworldToken`에서 읽음 — 키 자체는 repo에 커밋 안 함):
+  QGC `Settings → General → VWorld`에 입력하거나 `QGroundControl(.Daily).ini [General]`에
+  `vworldToken=<키>` 추가. 이 토큰은 2D 지도의 VWorld 공급자에도 그대로 쓰임. 키 발급: vworld.kr
+  무료 가입 → 인증키 발급(도메인 `localhost` 등록). 우리 키는 별도 보관처 참조.
+
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 
 `[LinkConfigurations]`에서 명시적 UDP listener들(Link1/2/3 = 14541/14542/14544)을 **제거**했음. PX4 SITL이 normal MAVLink를 14550으로 모두 송신해 QGC가 자동 검색하므로 명시 등록 불필요. sys_id 2/3/5로 vehicle 구분.

@@ -81,7 +81,38 @@
 
     var VEHICLE_ICON = null;
 
-    function initCesium(token) {
+    // VWorld (브이월드) covers only Korea. Restrict tile requests to this
+    // box so Cesium doesn't spam 404s elsewhere and falls through to the
+    // base world imagery outside Korea.
+    var VWORLD_RECT = Cesium.Rectangle.fromDegrees(123.0, 32.0, 132.5, 39.5);
+
+    function addVWorldLayers(token) {
+        // Korean high-res satellite, draped over the globe + world terrain.
+        // WMTS path /{z}/{y}/{x}, Web Mercator, XYZ (top-left) tile numbering
+        // — matches Cesium's default WebMercatorTilingScheme.
+        viewer.imageryLayers.addImageryProvider(
+            new Cesium.UrlTemplateImageryProvider({
+                url: "https://api.vworld.kr/req/wmts/1.0.0/" + token +
+                     "/Satellite/{z}/{y}/{x}.jpeg",
+                tilingScheme: new Cesium.WebMercatorTilingScheme(),
+                minimumLevel: 5, maximumLevel: 19,
+                rectangle: VWORLD_RECT,
+                credit: "VWorld",
+            }));
+        // Hybrid overlay: roads, place labels, admin boundaries (transparent png).
+        viewer.imageryLayers.addImageryProvider(
+            new Cesium.UrlTemplateImageryProvider({
+                url: "https://api.vworld.kr/req/wmts/1.0.0/" + token +
+                     "/Hybrid/{z}/{y}/{x}.png",
+                tilingScheme: new Cesium.WebMercatorTilingScheme(),
+                minimumLevel: 5, maximumLevel: 19,
+                rectangle: VWORLD_RECT,
+            }));
+    }
+
+    // centerLon/centerLat/centerHeight describe the QGC 2D map's current
+    // view, so the 3D view opens looking at the same place.
+    function initCesium(token, vworldToken, centerLon, centerLat, centerHeight) {
         Cesium.Ion.defaultAccessToken = token;
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain(),
@@ -94,8 +125,17 @@
         viewer.scene.globe.depthTestAgainstTerrain = true;
         VEHICLE_ICON = createVehicleIcon();
 
+        if (vworldToken && vworldToken.length > 0) {
+            addVWorldLayers(vworldToken);
+        }
+
+        // Open on the same spot the 2D map is showing (fallback: Korea).
+        var lon = (typeof centerLon === "number" && isFinite(centerLon)) ? centerLon : 127.206028;
+        var lat = (typeof centerLat === "number" && isFinite(centerLat)) ? centerLat : 34.61167;
+        var h = (typeof centerHeight === "number" && isFinite(centerHeight) && centerHeight > 0) ? centerHeight : 3000;
         viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(127.0, 37.5, 5000000),
+            destination: Cesium.Cartesian3.fromDegrees(lon, lat, h),
+            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
         });
 
         // Right-click → QML

@@ -18,6 +18,14 @@ Item {
     property var _visualItems: _missionController ? _missionController.visualItems : null
     property bool cesiumReady: false
     property string cesiumToken: QGroundControl.settingsManager.appSettings.cesiumToken.rawValue
+    property string vworldToken: QGroundControl.settingsManager.appSettings.vworldToken.rawValue
+
+    // Convert the QGC 2D flight-map zoom (web-mercator zoom level) to a
+    // rough Cesium camera height so the 3D view opens framed like the 2D map.
+    function _zoomToHeight(zoom) {
+        if (!zoom || zoom <= 0) return 3000;
+        return 35000000.0 / Math.pow(2, zoom - 3);
+    }
 
     // Click context for guided actions
     property var _clickCoord: QtPositioning.coordinate()
@@ -36,7 +44,15 @@ Item {
 
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
-                webView.runJavaScript('initCesium("' + cesiumToken + '")');
+                // Open the 3D view on the same location the 2D map is showing.
+                var pos = QGroundControl.flightMapPosition
+                var lat = (pos && pos.isValid && (pos.latitude !== 0 || pos.longitude !== 0))
+                            ? pos.latitude : 34.61167
+                var lon = (pos && pos.isValid && (pos.latitude !== 0 || pos.longitude !== 0))
+                            ? pos.longitude : 127.206028
+                var height = _zoomToHeight(QGroundControl.flightMapZoom)
+                webView.runJavaScript('initCesium("' + cesiumToken + '","' + vworldToken
+                                      + '",' + lon + ',' + lat + ',' + height + ')');
                 cesiumReady = true;
             }
         }
