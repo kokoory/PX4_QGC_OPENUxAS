@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal AMASE scenario that opens the map on the Korea mixed-fleet sim
+  area (same view as QGC: vehicles.json defaults.home_*). Pair with the
+  satellite overlay fetched by scripts/fetch_amase_overlay.py.
+
+  Launch (run from the OpenAMASE dir so ./data/overlay is found):
+    cd <sbx>/amase/src/OpenAMASE
+    java -Xmx2048m -classpath "dist/*:lib/*" avtas.app.Application \
+        [config] config/amase [scenario] <abs path to this file>
+  (use the real long-dash flags "config" and "scenario"; note XML comments
+  cannot contain a double-dash, so they are spelled out here.)
+
+  LongExtent 0.12 deg ~ 11 km wide view, matching the 8 km overlay square.
+-->
+<AMASE>
+  <ScenarioData>
+    <SimulationView LongExtent="0.12" Latitude="34.61167" Longitude="127.206028"/>
+    <ScenarioName>Korea Mixed-Fleet Area</ScenarioName>
+    <Date>1/1/2026:12:00:00</Date>
+    <ScenarioDuration>7200.0</ScenarioDuration>
+    <TrackAgeOut/>
+  </ScenarioData>
+  <ScenarioEventList/>
+</AMASE>

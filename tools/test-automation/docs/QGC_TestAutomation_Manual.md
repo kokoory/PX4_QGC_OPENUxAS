@@ -618,6 +618,38 @@ QTWEBENGINE_DISABLE_SANDBOX=1 ./build/Release/QGroundControl
 - 시뮬에서 GPS lock 전에는 `arm`이 거부됨 → SITL 시작 후 5–10초 대기.
 - `nc -u 127.0.0.1 45679` 같은 단순 도구로 명령을 손으로 보내 동작 확인 가능.
 
+### AMASE 지도가 검은색입니다 (QGC와 같은 영역 위성 지도 띄우기).
+
+AMASE는 완전 오프라인 도구라 온라인 타일을 받지 않습니다. 기본 배경은 전 지구 1장
+(`data/world_image_small.jpg`, 1픽셀 ≈ 13 km)이라 미션 줌에서는 사실상 검은 화면입니다.
+QGC와 **같은 위성 이미지 계열(Esri World Imagery)·같은 좌표**로 지도를 채우려면:
+
+```
+# 1) 위성 overlay 다운로드 (QGC와 같은 한국 시뮬 영역, 기본 4 km/z16)
+python3 scripts/fetch_amase_overlay.py
+#    → <OpenAMASE>/data/overlay/korea.jpg + ESRI world file 'korea' 생성
+#    옵션: --radius-km 8 --zoom 15 --center LAT,LON --name NAME
+
+# 2) 한국 좌표로 열리는 최소 시나리오로 AMASE 실행
+cd <sbx>/amase/src/OpenAMASE     # ./data/overlay 를 찾으려면 이 디렉터리에서
+java -Xmx2048m -classpath "dist/*:lib/*" avtas.app.Application \
+    --config config/amase \
+    --scenario <QGC>/tools/test-automation/configs/amase_korea_scenario.xml
+```
+
+동작 원리: AMASE `WorldImageLayer`가 `config/amase/Plugins.xml`의
+`<Directory>./data/overlay</Directory>`를 스캔해 georeferenced 이미지를 깐다.
+`fetch_amase_overlay.py`는 XYZ 타일을 stitching한 뒤 Web Mercator → equirectangular
+(AMASE가 기대하는 선형 위경도)로 재투영하고, 이미지(`korea.jpg`)와 **확장자 없는** 짝
+world file(`korea`)을 쓴다(AMASE는 이미지명에서 4글자를 뗀 이름의 world file을 찾음 —
+`WorldImageLayer.setImageDir()`).
+
+함정:
+- **XML 주석에 `--`(이중 하이픈) 금지**. `amase_korea_scenario.xml`의 실행 예시에서 `--config`
+  같은 플래그를 풀어 쓴 이유. 위반 시 `ParseError` → `readScenario`가 null 반환 →
+  `EntityControl.initScenario`에서 NPE로 창이 안 뜸.
+- overlay는 새 호스트에서 재생성 필요(gitignored). 스크립트만 repo에 있음.
+
 ---
 
 ## 부록 A — LMCP/ZeroMQ 와이어 형식
