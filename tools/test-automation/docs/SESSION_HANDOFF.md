@@ -338,6 +338,23 @@ python3 -u uxas_publish_task.py area \
   - 예: `python3 vworld_uxas_search.py river --vehicles 4 --name 한강 --bbox 37.515,126.945,37.530,126.965 --with-operating-region 37.52,126.955,4000`
   - dry-run으로 도로(40pt sweep)·하천(30pt 영역, 클립 정상) 검증 완료. 라이브 비행은 풀스택 필요.
 
+**2026-06-07 QGC에서 임무 계획 (3D 우클릭 → UxAS 탐색)**:
+- **흐름**: QGC 3D 뷰 우클릭 → 컨텍스트 메뉴 `UxAS: area/road/river search here` →
+  `EventBroadcaster.sendEvent("uxas_search", kind, {center_lat, center_lon, vehicles,
+  altitude, half_size_m, region_radius})` (UDP 45678 방송) → `uxas_search_listener.py`가
+  받아 클릭 지점 중심의 폴리곤(area)/bbox(road·river)를 만들어 `uxas_publish_task.py` /
+  `vworld_uxas_search.py`로 발행 → UxAS가 차량 배정 → bridge가 비행.
+- **파일**: `Cesium3DView.qml`(메뉴 3항목 + `_sendUxasSearch` + 임무 기본값 프로퍼티
+  `uxasVehicles`/`uxasAreaAltitude`/...), `scripts/uxas_search_listener.py`(신규).
+- **실행**: UxAS+SITL+bridge 띄운 뒤 `VWORLD_KEY=<키> python3 uxas_search_listener.py`.
+  그러면 운영자가 QGC 3D에서 우클릭만으로 임무를 발행. (road/river는 VWORLD_KEY 필요.)
+- **검증 상태**: 리스너는 UDP 이벤트 → 올바른 발행 명령 생성까지 end-to-end 검증됨(수동 UDP
+  송신). 3D 우클릭→방송 링크는 기존 검증된 EventBroadcaster 경로(GuidedActionsController와
+  동일 패턴)를 사용 — 단, **합성 입력(XTEST)이 내장 Chromium 우클릭으로 등록되지 않아
+  헤드리스 자동화로는 메뉴 클릭을 못 띄움**. 실제 마우스로는 동작 예상이나 라이브 확인 권장.
+- **확장 여지**: 현재는 클릭 지점 중심 고정 박스. 폴리곤 직접 그리기/도로명 선택/파라미터
+  다이얼로그는 추후. river는 박스 내 최대 하천 폴리곤 사용(이름 무관).
+
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 
 `[LinkConfigurations]`에서 명시적 UDP listener들(Link1/2/3 = 14541/14542/14544)을 **제거**했음. PX4 SITL이 normal MAVLink를 14550으로 모두 송신해 QGC가 자동 검색하므로 명시 등록 불필요. sys_id 2/3/5로 vehicle 구분.
