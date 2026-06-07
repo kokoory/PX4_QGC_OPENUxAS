@@ -65,6 +65,37 @@ cd ~/OpenUxAS
 - LMCP Python 라이브러리는 **이미 repo에 포함** (`tools/test-automation/lmcp_py/`) — 재생성 불필요.
   MDM이 바뀌었을 때만: 매뉴얼 "Python LMCP 라이브러리 생성" 절 참조
 
+### 3-1. `.vpython` venv 문제 (run-example/anod가 `ModuleNotFoundError: No module named 'uxas'`로 실패할 때)
+
+`.vpython/` venv은 생성 시점의 **절대 경로**가 내부에 박힌다. repo를 다른 경로로 옮기거나
+시스템 Python이 업그레이드되면 깨짐 (2026-06-07 구 호스트에서 실제 발생 — repo 이동이 원인).
+fresh clone 첫 실행 시 자동 설치는 apt를 써서 sudo를 물을 수 있음. 둘 다 수동 재생성으로 해결:
+
+```bash
+cd ~/OpenUxAS
+rm -rf .vpython
+python3 -m venv .vpython
+.vpython/bin/python3 -m pip install -e infrastructure/uxas
+./run-example --list    # 동작 확인
+```
+
+### 3-2. 예제 실행 + AMASE 시각화 (구 호스트에서 동작 검증 완료)
+
+```bash
+./run-example --list                                  # 예제 목록
+./run-example 01_HelloWorld                           # 최소 예제 (Ctrl+C 종료)
+./run-example 02_Example_WaterwaySearch --no-amase    # 시뮬레이션 예제, headless
+./anod build amase                                    # AMASE 시각화 빌드 (Java 필요, 1회)
+./run-example 02_Example_WaterwaySearch               # AMASE GUI와 함께 실행
+```
+
+- AMASE 창이 뜨면 **▶ (Play) 버튼**을 눌러야 시뮬레이션 시작 — UAV 2대가 수로 추종 + 센서
+  footprint가 지도에 그려지면 정상 (Java 21에서 동작 확인됨)
+- Web UI 컨트롤 패널: `python3 uxas_ui_server.py --port 8080` → 사용법 `WebUI_Guide_Korean.md`
+- 개념/구조 가이드: `OpenUxAS_Guide_Korean.md`
+- 참고: 우리 mixed-fleet 자동 비행은 예제 체계가 아니라 `uxas -cfgPath uxas_multi.xml` 직접
+  실행 방식 (SESSION_HANDOFF 4-셸 시퀀스). 예제는 서비스/task 단독 검증용
+
 ## 4. QGC 빌드
 
 ```bash
