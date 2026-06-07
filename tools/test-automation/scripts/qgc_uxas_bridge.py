@@ -522,6 +522,7 @@ class MAVLinkReader:
         self._capture_lock = threading.Lock()
         self._control_lock = threading.Lock()  # serializes arm/set_mode/upload
         self._hb_thread: Optional[threading.Thread] = None
+        self._last_mission_current: tuple = ()
 
     def start(self) -> None:
         print(f"[MAVLink] Connecting to {self.connection_str} ...")
@@ -816,6 +817,20 @@ class MAVLinkReader:
                         self.state.mode = mode_map.get(
                             (main_mode, sub_mode),
                             f"custom({main_mode},{sub_mode})")
+                    elif mtype == "STATUSTEXT":
+                        # PX4 explains mission rejections / warnings here —
+                        # essential when AUTO.MISSION silently falls back to
+                        # LOITER (e.g. feasibility check failures).
+                        print(f"[PX4:{self.vehicle_id}] {msg.text}")
+                    elif mtype == "MISSION_CURRENT":
+                        # mission_state: 1=NO_MISSION 2=NOT_STARTED 3=ACTIVE
+                        #                4=PAUSED 5=COMPLETE
+                        cur = (msg.seq, getattr(msg, "mission_state", 0),
+                               getattr(msg, "total", 0))
+                        if cur != self._last_mission_current:
+                            self._last_mission_current = cur
+                            print(f"[PX4:{self.vehicle_id}] MISSION_CURRENT "
+                                  f"seq={cur[0]} state={cur[1]} total={cur[2]}")
             except Exception as exc:
                 if self._running:
                     print(f"[MAVLink] Read error: {exc}")
@@ -1201,12 +1216,49 @@ class QGCUxASBridge:
         } for wp in wps]
         print(f"[Bridge] Activating UxAS mission ({len(items)} waypoints) "
               f"on vehicle {self.vehicle_id}")
+        # Dump the converted mission for offline analysis (issue: vehicle
+        # entered AUTO.MISSION but immediately reported COMPLETE/LOITER).
+        try:
+            dump_dir = os.path.join(_SCRIPT_DIR, "..", "logs")
+            os.makedirs(dump_dir, exist_ok=True)
+            dump_path = os.path.join(
+                dump_dir, f"mission_dump_v{self.vehicle_id}_"
+                          f"{int(time.time())}.json")
+            with open(dump_path, "w") as fh:
+                json.dump({
+                    "vehicle_id": self.vehicle_id,
+                    "first_waypoint": getattr(mc, "get_FirstWaypoint",
+                                              lambda: None)(),
+                    "waypoint_numbers": [
+                        wp.get_Number() for wp in mc.get_WaypointList()],
+                    "next_waypoints": [
+                        wp.get_NextWaypoint() for wp in mc.get_WaypointList()],
+                    "items": items,
+                }, fh, indent=1)
+            print(f"[Bridge] Mission dumped to {dump_path}")
+            for it in items[:3] + items[-2:]:
+                print(f"[Bridge]   wp ({it['lat']:.6f},{it['lon']:.6f}) "
+                      f"alt={it['alt']:.1f}")
+        except Exception as exc:
+            print(f"[Bridge] Mission dump failed: {exc}")
         ok = self.mavlink.upload_mission(items)
         if not ok:
             print(f"[Bridge] Failed to upload mission to vehicle "
                   f"{self.vehicle_id}")
             return
         if self.mavlink.set_mode_auto_mission():
+            # Defense in depth: verify the mode actually stuck. If PX4
+            # bounced back to LOITER (e.g. mode change raced another auto
+            # mode), re-command once — a second activation resets the
+            # navigator's finished flag and the mission executes normally.
+            for _ in range(5):
+                time.sleep(1.0)
+                if self.mavlink.get_state().mode == "auto_mission":
+                    break
+            else:
+                print(f"[Bridge] AUTO.MISSION did not stick "
+                      f"(mode={self.mavlink.get_state().mode}) — re-commanding")
+                self.mavlink.set_mode_auto_mission()
             self._mission_active = True
             print(f"[Bridge] Vehicle {self.vehicle_id} entered AUTO.MISSION")
 
@@ -1246,11 +1298,19 @@ class QGCUxASBridge:
                         # Roll back arm so we can retry next iteration
                         self.mavlink.arm(False)
 
-            # Activate cached mission when ready
+            # Activate cached mission when ready.
+            # NOTE: must NOT activate while AUTO.TAKEOFF is still running.
+            # The takeover altitude (200 m) is below the takeoff target
+            # (220 m), so the threshold always crosses mid-takeoff; switching
+            # to AUTO.MISSION at that moment makes the PX4 navigator mark the
+            # fresh mission finished without flying it (mission_result
+            # finished=True, seq_reached=-1) and fall back to AUTO.LOITER.
+            # Waiting for the takeoff mode to end fixes the race.
             with self._mission_lock:
                 pending = self._pending_mission_command
             if pending is not None and s.armed \
-                    and s.alt_agl_m >= self._alt_takeover_agl_m:
+                    and s.alt_agl_m >= self._alt_takeover_agl_m \
+                    and s.mode != "auto_takeoff":
                 with self._mission_lock:
                     self._pending_mission_command = None
                 print(f"[Bridge] Vehicle {self.vehicle_id} reached "

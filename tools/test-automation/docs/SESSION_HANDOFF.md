@@ -64,7 +64,21 @@ cd PX4_QGC_OPENUxAS && git submodule update --init --recursive   # QGC 빌드에
 ### 3. 작업 순서 (이어서 할 일)
 
 1. **환경 재현 검증**: 아래 "즉시 재시작 시퀀스"로 단일 v1 자동 비행 체인이 새 호스트에서도 도는지 확인 (지난 세션에서 성공한 지점 재현)
-2. **[1순위] AUTO.MISSION waypoint 미순회 디버그**: 업로드는 정상(21개)인데 즉시 LOITER 복귀(MISSION_CURRENT state=5 COMPLETE). → `waypoints_from_mission_command` 출력 좌표를 덤프해 실제 폴리곤 순회 경로인지 검증, 첫 item/고도(80m vs 현재 220m) 정리. 상세는 아래 "남은 refinement"
+2. ~~[1순위] AUTO.MISSION waypoint 미순회~~ → **2026-06-07 해결됨 (구 호스트에서 라이브 재현+수정+재검증 완료)**.
+   원인은 mission 데이터가 아니라 **race 2개**:
+   - **Race A (주범)**: bridge가 200 m AGL 통과 순간 AUTO.MISSION으로 전환하는데, 그 시점은 아직
+     AUTO.TAKEOFF(목표 220 m)가 진행 중. takeoff 미완료 상태에서 모드를 뺏으면 PX4 navigator가
+     mission을 즉시 finished 처리(mission_result.finished=True, seq_reached=-1, statustext 없음)하고
+     AUTO.LOITER로 복귀. 임계 200 < 목표 220 구조라 **항상** 재현되는 결정적 버그였음.
+   - **Race B**: upload 완료 직후 즉시 모드 전환하면 PX4 feasibility 재검사 전이라 LOITER로 bounce 가능.
+   **수정 (qgc_uxas_bridge.py)**: ① `_takeover_loop`가 `mode != auto_takeoff`일 때만 활성화,
+   ② 전환 후 5 s 내 auto_mission 정착 확인 + 미정착 시 1회 재명령(자동 복구), ③ STATUSTEXT /
+   MISSION_CURRENT 로깅 + mission JSON 덤프(`logs/mission_dump_v*.json`) 추가.
+   검증: v1 풀체인(ARM→TAKEOFF→cache→takeoff 종료 대기→upload→AUTO.MISSION→seq 0→1→2→3 순회) 무개입 성공.
+   **부수 발견 2개**: (a) `launch_all.sh`의 mavlink_recorder가 bridge와 같은 UDP 14541에 바인딩해
+   PX4 트래픽을 가로챔 → GCS heartbeat 끊겨 ARM 거부. bridge와 함께 쓸 때는 `RECORDER=0` 필수.
+   (b) PX4 SITL dataman이 인스턴스 작업 디렉터리에 영속화돼 이전 세션 mission(21개)이 부팅 직후부터
+   보임 — 무해하지만 로그 해석 시 혼동 주의.
 3. **[2순위] Cessna(v4) 자동 ARM 실패** — 해결책 후보는 "미해결 이슈" 표 참조
 4. ~~[3순위] Cesium 3D 버튼 segfault~~ → **2026-06-07 해결됨**. 원인은 main.cc의 AppArmor sandbox
    자동 우회 코드(이미 작성돼 있었음)가 **구 바이너리(5/8 빌드)에 미포함**이었던 것. 재빌드 후
@@ -91,8 +105,9 @@ Bridge auto-takeoff (ARM + NAV_TAKEOFF, 현재 좌표) → 0→220m AGL 실제 �
 3. **NAV_TAKEOFF lat/lon=0** (가장 결정적) → 현재 좌표를 넣어야 함. 0,0이면 PX4가 적도로 해석해 모터를 안 돌리고 auto-disarm. `takeoff()`가 `s.lat_deg/s.lon_deg` 사용.
 4. **lockstep Accel TIMEOUT** → `PX4_SIM_SPEED_FACTOR`(launch_all.sh의 `SIM_SPEED` env, 기본 1.0). 느린 호스트는 `SIM_SPEED=0.5`로 실행해야 센서 타임아웃/EKF "vertical velocity unstable" 회피. **단일 vehicle + headless(`gz sim -g` kill) + SIM_SPEED=0.5**가 이 호스트의 안정 조합.
 
-**남은 refinement (다음 세션 1순위):**
-- AUTO.MISSION 진입 후 vehicle이 LOITER로 복귀(MISSION_CURRENT state=5 COMPLETE)하며 waypoint를 실제로 순회하지 않음. MISSION_COUNT=21은 정상 업로드됨. 원인 후보: (a) 업로드한 21개 waypoint 고도(80m)가 현재(220m)와 큰 차이 + 첫 item이 NAV_TAKEOFF가 아니라 바로 NAV_WAYPOINT, (b) seq=0를 current로 올렸는데 PX4가 즉시 reached 처리, (c) UxAS waypoint 좌표/구조 확인 필요. → `waypoints_from_mission_command` 출력 좌표를 덤프해서 실제 폴리곤을 순회하는 경로인지 검증하고, 필요하면 mission 첫 항목/고도 정리.
+**~~남은 refinement~~ → 2026-06-07 해결**: LOITER 복귀의 원인은 후보 (a)(b)(c) 모두 아니었고,
+**AUTO.TAKEOFF 진행 중 모드 전환 race**였음 (상세는 최상단 ★★ §3-2). waypoint 좌표/구조는 덤프
+검증 결과 정상(폴리곤 lawn-mower 패턴, 번호 1→21 선형 체인, 전 항목 relative 50 m).
 
 **이 호스트 운영 핵심:** load가 평소 높음(uptime 32일). 비행 검증은 **단일 vehicle + GUI off + SIM_SPEED=0.5**로. 멀티 vehicle 동시 비행은 더 강한 호스트 필요(lockstep 센서 starvation).
 
@@ -180,7 +195,7 @@ python3 -u uxas_publish_task.py area \
 
 | 우선순위 | 항목 | 비고 |
 |---|---|---|
-| 1 | **멀티콥터 자동 비행 라이브 검증** | 코드 작성 완료, 실 시험 직전 종료. 위 시퀀스로 즉시 가능 |
+| 1 | ~~멀티콥터 자동 비행 라이브 검증~~ | **2026-06-07 완료** — v1 풀체인 무개입 성공 (waypoint 순회 포함, ★★ §3-2 참조) |
 | 2 | **Cessna 자동 ARM 실패** | spawn z=300으로도 PX4 GPS lock 전에 추락 → `ARM ack result=1 (FAIL)`. 해결책 후보: (a) gz_standard_vtol로 변경, (b) korea.sdf에 활주로 모델 추가, (c) PX4 GPS lock 가속 파라미터 |
 | 3 | ~~QGC Cesium 3D 버튼 segfault~~ | **2026-06-07 해결**. 원인 = 구 바이너리에 main.cc sandbox 우회 미포함. 재빌드로 해소, 토글 검증 완료 |
 | 4 | Tier 1-2 / Tier 3 자동 비행 확장 | 1번 끝나면 자연스럽게 |
