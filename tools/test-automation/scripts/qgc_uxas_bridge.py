@@ -729,6 +729,54 @@ class MAVLinkReader:
             finally:
                 self._stop_capture()
 
+    def set_param(self, name: str, value: float,
+                  timeout: float = 3.0) -> bool:
+        """Set a PX4 parameter via PARAM_SET and wait for the PARAM_VALUE echo.
+
+        Needed because launch_all.sh only consumes SYS_AUTOSTART from
+        vehicles.json "parameters" — everything else must be applied over
+        MAVLink after boot (e.g. MIS_TKO_LAND_REQ=0 so UxAS waypoint-only
+        missions pass the fixed-wing feasibility check).
+
+        PX4 rejects PARAM_SET whose param_type does not match the parameter's
+        declared type, so we PARAM_REQUEST_READ first to learn the real type
+        (guessing INT32 from "10" silently fails on FLOAT params).
+        """
+        if not self.conn:
+            return False
+        with self._control_lock:
+            self._start_capture(["PARAM_VALUE"])
+            try:
+                # 1) Learn the parameter's declared type.
+                self.conn.mav.param_request_read_send(
+                    self.conn.target_system, self.conn.target_component,
+                    name.encode(), -1)
+                ptype = None
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    msg = self._wait_capture(["PARAM_VALUE"], 0.5)
+                    if msg is not None and msg.param_id == name:
+                        ptype = msg.param_type
+                        break
+                if ptype is None:
+                    print(f"[MAVLink] PARAM {name} not found (read timeout)")
+                    return False
+                # 2) Set with the matching type (PX4 by-value convention).
+                self.conn.mav.param_set_send(
+                    self.conn.target_system, self.conn.target_component,
+                    name.encode(), float(value), ptype)
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    msg = self._wait_capture(["PARAM_VALUE"], 0.5)
+                    if msg is not None and msg.param_id == name:
+                        print(f"[MAVLink] PARAM {name} = "
+                              f"{msg.param_value:g} (OK)")
+                        return True
+                print(f"[MAVLink] PARAM {name} set timed out")
+                return False
+            finally:
+                self._stop_capture()
+
     def set_mode_auto_mission(self, timeout: float = 5.0) -> bool:
         """Switch PX4 to AUTO.MISSION (main_mode=4, sub_mode=4)."""
         if not self.conn:
@@ -1477,6 +1525,11 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="If > 0, bridge auto-arms and issues NAV_TAKEOFF to "
                         "this AGL altitude (multicopter / ground-spawn use). "
                         "Default 0: disabled.")
+    p.add_argument("--px4-param", action="append", default=[],
+                   metavar="NAME=VALUE",
+                   help="PX4 parameter to apply via MAVLink PARAM_SET after "
+                        "connecting (repeatable). launch_bridges.sh fills "
+                        "these from vehicles.json \"parameters\".")
     return p
 
 
@@ -1518,6 +1571,17 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         bridge.start()
+        for spec in args.px4_param:
+            name, sep, raw = spec.partition("=")
+            if not sep:
+                print(f"[Bridge] Ignoring malformed --px4-param {spec!r}")
+                continue
+            try:
+                value = float(raw)
+            except ValueError:
+                print(f"[Bridge] Ignoring non-numeric --px4-param {spec!r}")
+                continue
+            bridge.mavlink.set_param(name.strip(), value)
         if args.auto_register:
             time.sleep(1.0)  # let connections stabilize
             bridge.register_vehicle()

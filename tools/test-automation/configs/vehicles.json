@@ -125,7 +125,7 @@
       "spawn_pose": {
         "x": 10,
         "y": 0,
-        "z": 300,
+        "z": 0,
         "yaw_deg": 0
       },
       "ports": {
@@ -137,7 +137,8 @@
       "parameters": {
         "SYS_AUTOSTART": 4003,
         "FW_AIRSPD_MIN": 10,
-        "FW_AIRSPD_MAX": 25
+        "FW_AIRSPD_MAX": 25,
+        "MIS_TKO_LAND_REQ": 0
       },
       "lmcp": {
         "min_speed_mps": 10.0,

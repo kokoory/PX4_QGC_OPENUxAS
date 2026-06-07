@@ -135,7 +135,7 @@ SESSION_HANDOFF.md "즉시 재시작 시퀀스"의 4-셸 절차 그대로:
 | # | 항목 | 비고 |
 |---|---|---|
 | 1 | ~~AUTO.MISSION waypoint 미순회~~ | **2026-06-07 해결** — AUTO.TAKEOFF 진행 중 모드 전환 race. bridge가 takeoff 종료 대기 + 미정착 시 재명령하도록 수정, v1 풀체인 검증 완료 (SESSION_HANDOFF ★★ §3-2) |
-| 2 | **Cessna(v4) 자동 ARM 실패** | 공중 spawn z=300에도 GPS lock 전 추락. 후보: gz_standard_vtol / 활주로 모델 / GPS lock 가속 |
+| 2 | ~~Cessna(v4) 자동 ARM 실패~~ | **2026-06-07 해결** — 지상 spawn + RWTO 활주 이륙 + `MIS_TKO_LAND_REQ=0` (bridge가 vehicles.json 파라미터를 PARAM_SET으로 적용). 풀체인 검증 완료 (SESSION_HANDOFF ★★ §3-3) |
 | 3 | ~~Cesium 3D 버튼 segfault~~ | **2026-06-07 해결** — 원인은 구 바이너리에 main.cc AppArmor sandbox 우회 미포함. 새 호스트는 §4 빌드만 하면 됨 (SESSION_HANDOFF §3 참조) |
 | 4 | **멀티 vehicle 동시 비행** | 구 호스트에선 lockstep starvation으로 불가 — 새 호스트의 본 목적. Tier 1-2/Tier 3 |
 | 5 | 보고서 `QGC_UxAS_MixedFleet_Report.md` §6.7 갱신 | 라이브 결과 반영 |

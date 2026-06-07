@@ -47,7 +47,10 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # Emit one line per vehicle, tab-separated:
 #   id  label  type  sitl_udp  min_speed max_speed nominal_speed
-#   min_alt max_alt nominal_alt max_climb max_bank  spawn_z
+#   min_alt max_alt nominal_alt max_climb max_bank  spawn_z  px4_params
+# px4_params: comma-separated NAME=VALUE from vehicles.json "parameters"
+# (minus SYS_AUTOSTART, which launch_all.sh consumes). The bridge applies
+# them via MAVLink PARAM_SET — launch_all.sh does NOT push them into PX4.
 resolve_caps() {
     python3 - "$VEHICLES_JSON" "$FLEET" "$IDS" <<'PY'
 import json, sys
@@ -72,6 +75,9 @@ for i in ids:
     nominal_speed = cap.get("nominal_speed_mps",
                             (cap.get("min_speed_mps", 5) + cap.get("max_speed_mps", 30)) / 2)
     spawn_z = v.get("spawn_pose", {}).get("z", 0)
+    px4_params = ",".join(
+        f"{k}={val}" for k, val in v.get("parameters", {}).items()
+        if k != "SYS_AUTOSTART")
     print("\t".join([
         str(v["id"]), v["name"], vtype,
         str(v["ports"]["sitl_udp"]),
@@ -84,6 +90,7 @@ for i in ids:
         str(cap.get("max_climb_mps", 5)),
         str(cap.get("max_bank_deg", 25)),
         str(spawn_z),
+        px4_params or "-",
     ]))
 PY
 }
@@ -108,7 +115,7 @@ main() {
     local count=0
     while IFS=$'\t' read -r id name type sitl_udp \
                        min_sp max_sp nom_sp min_alt max_alt nom_alt \
-                       max_climb max_bank spawn_z; do
+                       max_climb max_bank spawn_z px4_params; do
         local mavlink_conn="udpin:0.0.0.0:${sitl_udp}"
         local logfile="${LOG_DIR}/bridge_${id}.log"
         # Air-spawn fixed-wing (z >= 50) needs bridge-side auto-arm so the
@@ -119,10 +126,26 @@ main() {
         if [[ "${type}" == "fixed_wing" ]]; then
             local z_int=${spawn_z%.*}
             if [[ ${z_int} -ge 50 ]]; then
+                # Legacy air-spawn path (kept for reference; unreliable —
+                # the vehicle falls before GPS/EKF is ready to arm).
                 per_vehicle_extra+=(--auto-arm-on-start)
+            else
+                # Ground spawn: PX4 rc_cessna has RWTO_TKOFF=1 by default,
+                # so NAV_TAKEOFF performs a runway takeoff from flat ground.
+                # Same ARM + NAV_TAKEOFF path as the multicopters.
+                per_vehicle_extra+=(--auto-takeoff-agl 220)
             fi
         elif [[ "${type}" == "multicopter" ]]; then
             per_vehicle_extra+=(--auto-takeoff-agl 220)
+        fi
+        # Apply vehicles.json "parameters" over MAVLink (launch_all.sh only
+        # consumes SYS_AUTOSTART; FW_AIRSPD_*, MIS_TKO_LAND_REQ etc. would
+        # otherwise silently never reach PX4).
+        if [[ -n "${px4_params}" && "${px4_params}" != "-" ]]; then
+            local param_spec
+            for param_spec in ${px4_params//,/ }; do
+                per_vehicle_extra+=(--px4-param "${param_spec}")
+            done
         fi
         # Friendly tag for the log line summarizing per-vehicle behavior
         local extra_tag=""

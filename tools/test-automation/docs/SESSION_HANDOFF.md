@@ -79,7 +79,20 @@ cd PX4_QGC_OPENUxAS && git submodule update --init --recursive   # QGC 빌드에
    PX4 트래픽을 가로챔 → GCS heartbeat 끊겨 ARM 거부. bridge와 함께 쓸 때는 `RECORDER=0` 필수.
    (b) PX4 SITL dataman이 인스턴스 작업 디렉터리에 영속화돼 이전 세션 mission(21개)이 부팅 직후부터
    보임 — 무해하지만 로그 해석 시 혼동 주의.
-3. **[2순위] Cessna(v4) 자동 ARM 실패** — 해결책 후보는 "미해결 이슈" 표 참조
+3. ~~[2순위] Cessna(v4) 자동 ARM 실패~~ → **2026-06-07 해결됨 (풀체인 라이브 검증 완료)**.
+   공중 spawn(z=300)은 애초에 불필요했음 — stock `4003_gz_rc_cessna` airframe에 `RWTO_TKOFF 1`
+   (활주 이륙)이 기본이라 **지상 spawn + NAV_TAKEOFF**로 정상 이륙함. 적용한 변경:
+   - `vehicles.json` v4 `spawn_pose.z = 300 → 0`
+   - `launch_bridges.sh`: fixed_wing 지상 spawn(z<50) → multicopter와 동일한 `--auto-takeoff-agl 220` 경로
+   - **FW mission feasibility 거부 해결**: PX4 고정익 기본값 `MIS_TKO_LAND_REQ=2`(착륙 패턴 필수)가
+     UxAS waypoint-only mission을 invalid 처리(mission_result.valid=False, state=1 NO_MISSION).
+     `vehicles.json` v4에 `MIS_TKO_LAND_REQ: 0` 추가 (우리 운영 모델: 착륙은 운영자가 QGC로)
+   - **launcher 파라미터 갭 해결**: `launch_all.sh`는 vehicles.json `parameters`에서 SYS_AUTOSTART만
+     소비하고 나머지는 PX4에 전달 안 함(FW_AIRSPD_*도 그동안 미적용이던 잠재 버그). bridge에
+     `--px4-param NAME=VALUE` 추가 — PARAM_REQUEST_READ로 선언 타입을 읽고 그 타입으로 PARAM_SET
+     (타입 불일치 시 PX4가 조용히 무시함). `launch_bridges.sh`가 vehicles.json에서 자동 주입.
+   검증: 지상 spawn → ARM(자동재시도) → 활주 이륙 → 220 m 상승 → UxAS 10-wp mission →
+   AUTO.MISSION → seq 0→8 전체 순회 → "Mission finished, loitering". 무개입 성공.
 4. ~~[3순위] Cesium 3D 버튼 segfault~~ → **2026-06-07 해결됨**. 원인은 main.cc의 AppArmor sandbox
    자동 우회 코드(이미 작성돼 있었음)가 **구 바이너리(5/8 빌드)에 미포함**이었던 것. 재빌드 후
    env 변수 없이 Cesium 진입 + 토글 4회 검증 완료. 새 호스트에서는 §1의 QGC 빌드만 하면 끝
@@ -196,7 +209,7 @@ python3 -u uxas_publish_task.py area \
 | 우선순위 | 항목 | 비고 |
 |---|---|---|
 | 1 | ~~멀티콥터 자동 비행 라이브 검증~~ | **2026-06-07 완료** — v1 풀체인 무개입 성공 (waypoint 순회 포함, ★★ §3-2 참조) |
-| 2 | **Cessna 자동 ARM 실패** | spawn z=300으로도 PX4 GPS lock 전에 추락 → `ARM ack result=1 (FAIL)`. 해결책 후보: (a) gz_standard_vtol로 변경, (b) korea.sdf에 활주로 모델 추가, (c) PX4 GPS lock 가속 파라미터 |
+| 2 | ~~Cessna 자동 ARM 실패~~ | **2026-06-07 해결** — 후보 (a)(b)(c) 전부 불필요. 지상 spawn + RWTO 활주 이륙 + `MIS_TKO_LAND_REQ=0` + bridge `--px4-param` (★★ §3-3 참조) |
 | 3 | ~~QGC Cesium 3D 버튼 segfault~~ | **2026-06-07 해결**. 원인 = 구 바이너리에 main.cc sandbox 우회 미포함. 재빌드로 해소, 토글 검증 완료 |
 | 4 | Tier 1-2 / Tier 3 자동 비행 확장 | 1번 끝나면 자연스럽게 |
 | 5 | 보고서 `QGC_UxAS_MixedFleet_Report.md` §6.7 갱신 | 라이브 결과 추가 |
