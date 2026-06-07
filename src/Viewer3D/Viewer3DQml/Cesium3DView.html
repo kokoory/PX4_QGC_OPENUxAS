@@ -117,14 +117,22 @@
     // ===============================================================
     var VWORLD_TOKEN = "";
     var buildingEntities = [];
+    var roadEntities = [];
+    var riverEntities = [];
     var _bldgLoadTimer = null;
     var _bldgLastKey = "";
     var FLOOR_HEIGHT_M = 3.3;            // meters per above-ground floor
     var BLDG_MAX_VIEW_HEIGHT = 14000;   // only fetch when camera below this (m)
 
-    function _clearVWorldBuildings() {
-        buildingEntities.forEach(function (e) { viewer.entities.remove(e); });
-        buildingEntities = [];
+    function _clearEntities(list) {
+        list.forEach(function (e) { viewer.entities.remove(e); });
+        list.length = 0;
+    }
+    function _clearVWorldBuildings() { _clearEntities(buildingEntities); }
+    function _clearVWorldVectors() {
+        _clearEntities(buildingEntities);
+        _clearEntities(roadEntities);
+        _clearEntities(riverEntities);
     }
 
     // Ask QML to fetch buildings for the current view. The VWorld Data API
@@ -134,7 +142,7 @@
     function loadVWorldBuildings() {
         if (!VWORLD_TOKEN || !viewer || !qgcBridge) return;
         var camHeight = viewer.camera.positionCartographic.height;
-        if (camHeight > BLDG_MAX_VIEW_HEIGHT) { _clearVWorldBuildings(); return; }
+        if (camHeight > BLDG_MAX_VIEW_HEIGHT) { _clearVWorldVectors(); return; }
 
         // Use the point the camera is actually looking at (screen centre ray
         // hitting the globe), not computeViewRectangle — a pitched camera's
@@ -155,13 +163,70 @@
         // (INVALID_RANGE) and hence zero buildings.
         var margin = Math.max(0.004, Math.min(camHeight * 0.000006, 0.014));
         var w = clon - margin, e = clon + margin, s = clat - margin, n = clat + margin;
-        if (e < 123 || w > 132.5 || n < 32 || s > 39.5) { _clearVWorldBuildings(); return; }
+        if (e < 123 || w > 132.5 || n < 32 || s > 39.5) { _clearVWorldVectors(); return; }
 
         var key = [w.toFixed(3), s.toFixed(3), e.toFixed(3), n.toFixed(3)].join(",");
         if (key === _bldgLastKey) return;
         _bldgLastKey = key;
 
-        qgcBridge.requestBuildings(w, s, e, n);
+        // Buildings (extruded) + roads + rivers, all from the same view box.
+        qgcBridge.requestVWorldLayer("LT_C_SPBD", w, s, e, n, "renderVWorldBuildings");
+        qgcBridge.requestVWorldLayer("LT_L_MOCTLINK", w, s, e, n, "renderVWorldRoads");
+        qgcBridge.requestVWorldLayer("LT_C_WKMSTRM", w, s, e, n, "renderVWorldRivers");
+    }
+
+    // Roads (LT_L_MOCTLINK, MultiLineString) → yellow polylines on the ground.
+    function renderVWorldRoads(featuresJson) {
+        if (!viewer) return;
+        var feats;
+        try { feats = JSON.parse(featuresJson); } catch (e) { feats = []; }
+        _clearEntities(roadEntities);
+        feats.forEach(function (f) {
+            var g = f.geometry;
+            var lines = (g.type === "MultiLineString") ? g.coordinates
+                      : (g.type === "LineString") ? [g.coordinates] : [];
+            lines.forEach(function (ln) {
+                var flat = [];
+                ln.forEach(function (c) { flat.push(c[0], c[1]); });
+                if (flat.length < 4) return;
+                var ent = viewer.entities.add({
+                    polyline: {
+                        positions: Cesium.Cartesian3.fromDegreesArray(flat),
+                        width: 3,
+                        clampToGround: true,
+                        material: Cesium.Color.fromCssColorString("#ffcc00").withAlpha(0.9),
+                    },
+                });
+                roadEntities.push(ent);
+            });
+        });
+    }
+
+    // Rivers (LT_C_WKMSTRM, MultiPolygon) → translucent blue surfaces.
+    function renderVWorldRivers(featuresJson) {
+        if (!viewer) return;
+        var feats;
+        try { feats = JSON.parse(featuresJson); } catch (e) { feats = []; }
+        _clearEntities(riverEntities);
+        feats.forEach(function (f) {
+            var g = f.geometry;
+            var polys = (g.type === "MultiPolygon") ? g.coordinates
+                      : (g.type === "Polygon") ? [g.coordinates] : [];
+            polys.forEach(function (poly) {
+                var ring = poly[0];
+                var flat = [];
+                ring.forEach(function (c) { flat.push(c[0], c[1]); });
+                if (flat.length < 6) return;
+                var ent = viewer.entities.add({
+                    polygon: {
+                        hierarchy: Cesium.Cartesian3.fromDegreesArray(flat),
+                        material: Cesium.Color.fromCssColorString("#2a7fff").withAlpha(0.45),
+                        classificationType: Cesium.ClassificationType.TERRAIN,
+                    },
+                });
+                riverEntities.push(ent);
+            });
+        });
     }
 
     // Called by QML with the VWorld GetFeature JSON (string).

@@ -79,16 +79,16 @@ Item {
             root.cesiumReady = true;
         }
 
-        // Called from the Cesium page to fetch VWorld building footprints for
-        // the given view box. The VWorld Data API sends no CORS header, so the
-        // WebEngine page can't fetch it directly — QML's XMLHttpRequest is not
-        // CORS-restricted, so we do the request here and hand the parsed
-        // feature array back to the page for extrusion.
-        function requestBuildings(w, s, e, n) {
+        // Generic VWorld Data API fetch for the Cesium page. The VWorld Data
+        // API sends no CORS header, so the WebEngine page can't fetch it
+        // directly — QML's XMLHttpRequest is not CORS-restricted, so we do the
+        // request here and hand the parsed feature array to the named page
+        // callback (renderVWorldBuildings / renderVWorldRoads / ...).
+        function requestVWorldLayer(layer, w, s, e, n, jsCallback) {
             if (!root.vworldToken) return;
             var box = "BOX(" + w + "," + s + "," + e + "," + n + ")";
             var url = "https://api.vworld.kr/req/data?service=data&version=2.0"
-                    + "&request=GetFeature&format=json&size=1000&page=1&data=LT_C_SPBD"
+                    + "&request=GetFeature&format=json&size=1000&page=1&data=" + layer
                     + "&geometry=true&attribute=true&crs=EPSG:4326"
                     + "&geomFilter=" + box
                     + "&key=" + root.vworldToken + "&domain=localhost"
@@ -96,7 +96,7 @@ Item {
             xhr.onreadystatechange = function() {
                 if (xhr.readyState !== XMLHttpRequest.DONE) return
                 if (xhr.status !== 200) {
-                    console.warn("VWorld buildings HTTP " + xhr.status)
+                    console.warn("VWorld " + layer + " HTTP " + xhr.status)
                     return
                 }
                 var feats = []
@@ -106,11 +106,10 @@ Item {
                         feats = resp.result.featureCollection.features || []
                     }
                 } catch (err) {
-                    console.warn("VWorld buildings parse error: " + err)
+                    console.warn("VWorld " + layer + " parse error: " + err)
                     return
                 }
-                // Pass the feature array back to the page for extrusion.
-                webView.runJavaScript('renderVWorldBuildings('
+                webView.runJavaScript(jsCallback + '('
                     + JSON.stringify(JSON.stringify(feats)) + ')')
             }
             xhr.open("GET", url)

@@ -320,8 +320,23 @@ python3 -u uxas_publish_task.py area \
      `computeViewRectangle`는 지평선까지 부풀어 27 km²가 나오므로 사용 금지. 대신 화면 중앙
      look-at 지점 ± margin(`camHeight×6e-6`, 0.004~0.014°, lat 37.5에서 ~7.6 km²) 박스를 씀.
 - **벡터 데이터 가용 레이어** (같은 Data API, 이 키로 확인): 건물 `LT_C_SPBD`(층수 `gro_flo_co`),
-  도로 `LT_L_MOCTLINK`, 하천 `LT_C_WKMSTRM`, 지적 `LP_PA_CBND_BUBUN`. 도로/하천은 polyline으로
-  같은 패턴(QML XHR → runJavaScript) 추가 가능 — 현재는 건물만 구현.
+  도로 `LT_L_MOCTLINK`(MultiLineString + `road_name`), 하천 `LT_C_WKMSTRM`(MultiPolygon + `riv_nm`),
+  지적 `LP_PA_CBND_BUBUN`.
+
+**2026-06-07 VWorld 도로/하천 3D 표시 + OpenUxAS 탐색 연동**:
+- **3D 표시**: `requestBuildings`를 범용 `requestVWorldLayer(layer, w,s,e,n, jsCallback)`로
+  일반화(QML). HTML이 view 박스마다 건물/도로/하천을 함께 요청 — 도로는
+  `renderVWorldRoads`(노란 `clampToGround` polyline), 하천은 `renderVWorldRivers`(파란 반투명
+  `ClassificationType.TERRAIN` polygon). 강남에서 도로망 노란선 + 건물 동시 렌더 확인.
+- **OpenUxAS 연동**: `scripts/vworld_uxas_search.py` — VWorld 도로/하천 geometry를 가져와
+  단순화한 뒤 `uxas_publish_task.py`에 `line`(도로 → LineSearchTask) / `area`(하천 →
+  AreaSearchTask)로 넘김. WaterwaySearch와 동일 구조를 **실제 한국 지도 데이터**로.
+  - `road`: 도로 세그먼트를 bbox 클립 → greedy 체이닝으로 1개 sweep path → LineSearchTask
+  - `river`: 하천 폴리곤을 bbox 클립(**Sutherland-Hodgman** 필수 — VWorld `한강`은 전국 단위
+    폴리곤이라 클립 안 하면 점이 강원/충북까지 퍼짐) → AreaSearchTask
+  - bbox는 VWorld 10 km² 제한 내(≈0.03°/변). `--dry-run`으로 점만 출력. `VWORLD_KEY` env 사용.
+  - 예: `python3 vworld_uxas_search.py river --vehicles 4 --name 한강 --bbox 37.515,126.945,37.530,126.965 --with-operating-region 37.52,126.955,4000`
+  - dry-run으로 도로(40pt sweep)·하천(30pt 영역, 클립 정상) 검증 완료. 라이브 비행은 풀스택 필요.
 
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 
