@@ -304,6 +304,25 @@ python3 -u uxas_publish_task.py area \
   `vworldToken=<키>` 추가. 이 토큰은 2D 지도의 VWorld 공급자에도 그대로 쓰임. 키 발급: vworld.kr
   무료 가입 → 인증키 발급(도메인 `localhost` 등록). 우리 키는 별도 보관처 참조.
 
+**2026-06-07 VWorld 3D 건물 (extrude)**:
+- 3D 버튼 → 카메라가 머무는 지점의 **VWorld 건물 footprint를 가져와 층수만큼 입체로 세움**.
+  `Cesium3DView.html`의 `loadVWorldBuildings`(camera `moveEnd`마다, debounce 400 ms)가 화면
+  중앙 ray가 지면에 닿는 지점 주변 박스를 만들고, `renderVWorldBuildings`가 `LT_C_SPBD`
+  feature를 polygon `extrudedHeight = gro_flo_co × 3.3 m`로 추출. 지형에 묻히지 않게
+  `heightReference: CLAMP_TO_GROUND` + `extrudedHeightReference: RELATIVE_TO_GROUND`.
+  검증: 강남 1735 m 뷰에서 1000동 입체 렌더(아파트 단지·블록), QGC와 같은 위치.
+- **결정적 제약 2개 (디버깅으로 확정)**:
+  1. **CORS**: VWorld 타일(WMTS)은 `Access-Control-Allow-Origin: *`를 보내지만 **Data API(벡터)는
+     CORS 헤더가 없음** → qrc: 페이지의 `fetch()`가 차단됨. 그래서 건물 요청은 HTML이
+     `qgcBridge.requestBuildings(w,s,e,n)`로 위임하고 **QML의 `XMLHttpRequest`**(CORS 비적용)가
+     받아 `webView.runJavaScript('renderVWorldBuildings(...)')`로 되돌려줌.
+  2. **geomFilter 면적 ≤ 10 km²**: 박스가 넘으면 `INVALID_RANGE`로 0건 반환. 피치 카메라의
+     `computeViewRectangle`는 지평선까지 부풀어 27 km²가 나오므로 사용 금지. 대신 화면 중앙
+     look-at 지점 ± margin(`camHeight×6e-6`, 0.004~0.014°, lat 37.5에서 ~7.6 km²) 박스를 씀.
+- **벡터 데이터 가용 레이어** (같은 Data API, 이 키로 확인): 건물 `LT_C_SPBD`(층수 `gro_flo_co`),
+  도로 `LT_L_MOCTLINK`, 하천 `LT_C_WKMSTRM`, 지적 `LP_PA_CBND_BUBUN`. 도로/하천은 polyline으로
+  같은 패턴(QML XHR → runJavaScript) 추가 가능 — 현재는 건물만 구현.
+
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 
 `[LinkConfigurations]`에서 명시적 UDP listener들(Link1/2/3 = 14541/14542/14544)을 **제거**했음. PX4 SITL이 normal MAVLink를 14550으로 모두 송신해 QGC가 자동 검색하므로 명시 등록 불필요. sys_id 2/3/5로 vehicle 구분.

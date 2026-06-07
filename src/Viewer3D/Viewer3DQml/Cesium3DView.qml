@@ -22,9 +22,13 @@ Item {
 
     // Convert the QGC 2D flight-map zoom (web-mercator zoom level) to a
     // rough Cesium camera height so the 3D view opens framed like the 2D map.
+    // flightMapZoom can still be at its uninitialised default (~2) the moment
+    // the 3D view opens, which would put the camera in space — guard against
+    // that and clamp to a sane 300 m .. 200 km range.
     function _zoomToHeight(zoom) {
-        if (!zoom || zoom <= 0) return 3000;
-        return 35000000.0 / Math.pow(2, zoom - 3);
+        if (!zoom || zoom < 4) return 3000;
+        var h = 35000000.0 / Math.pow(2, zoom - 3);
+        return Math.max(300, Math.min(h, 200000));
     }
 
     // Click context for guided actions
@@ -41,6 +45,14 @@ Item {
         settings.localStorageEnabled: true
 
         webChannel: channel
+
+        onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceID) {
+            // Surface real errors/warnings; ignore the routine tile-load misses
+            // VWorld emits at the edge of its Korea-only coverage.
+            if (level >= 1 && message.indexOf("Failed to obtain image tile") === -1) {
+                console.warn("[Cesium] " + message)
+            }
+        }
 
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
@@ -65,6 +77,44 @@ Item {
 
         function cesiumReady() {
             root.cesiumReady = true;
+        }
+
+        // Called from the Cesium page to fetch VWorld building footprints for
+        // the given view box. The VWorld Data API sends no CORS header, so the
+        // WebEngine page can't fetch it directly — QML's XMLHttpRequest is not
+        // CORS-restricted, so we do the request here and hand the parsed
+        // feature array back to the page for extrusion.
+        function requestBuildings(w, s, e, n) {
+            if (!root.vworldToken) return;
+            var box = "BOX(" + w + "," + s + "," + e + "," + n + ")";
+            var url = "https://api.vworld.kr/req/data?service=data&version=2.0"
+                    + "&request=GetFeature&format=json&size=1000&page=1&data=LT_C_SPBD"
+                    + "&geometry=true&attribute=true&crs=EPSG:4326"
+                    + "&geomFilter=" + box
+                    + "&key=" + root.vworldToken + "&domain=localhost"
+            var xhr = new XMLHttpRequest()
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== XMLHttpRequest.DONE) return
+                if (xhr.status !== 200) {
+                    console.warn("VWorld buildings HTTP " + xhr.status)
+                    return
+                }
+                var feats = []
+                try {
+                    var resp = JSON.parse(xhr.responseText).response
+                    if (resp && resp.status === "OK") {
+                        feats = resp.result.featureCollection.features || []
+                    }
+                } catch (err) {
+                    console.warn("VWorld buildings parse error: " + err)
+                    return
+                }
+                // Pass the feature array back to the page for extrusion.
+                webView.runJavaScript('renderVWorldBuildings('
+                    + JSON.stringify(JSON.stringify(feats)) + ')')
+            }
+            xhr.open("GET", url)
+            xhr.send()
         }
 
         // Called from JS on right-click

@@ -110,6 +110,126 @@
             }));
     }
 
+    // ===============================================================
+    // VWorld 3D buildings: fetch building footprints (LT_C_SPBD) for the
+    // current view from the VWorld Data API and extrude them by floor count
+    // (gro_flo_co). Loaded on camera-idle when zoomed in close enough.
+    // ===============================================================
+    var VWORLD_TOKEN = "";
+    var buildingEntities = [];
+    var _bldgLoadTimer = null;
+    var _bldgLastKey = "";
+    var FLOOR_HEIGHT_M = 3.3;            // meters per above-ground floor
+    var BLDG_MAX_VIEW_HEIGHT = 14000;   // only fetch when camera below this (m)
+
+    function _clearVWorldBuildings() {
+        buildingEntities.forEach(function (e) { viewer.entities.remove(e); });
+        buildingEntities = [];
+    }
+
+    // Ask QML to fetch buildings for the current view. The VWorld Data API
+    // sends no Access-Control-Allow-Origin header, so a fetch() from this
+    // qrc: page is blocked by CORS. QML's XMLHttpRequest is not subject to
+    // CORS, so the QML side does the request and calls renderVWorldBuildings().
+    function loadVWorldBuildings() {
+        if (!VWORLD_TOKEN || !viewer || !qgcBridge) return;
+        var camHeight = viewer.camera.positionCartographic.height;
+        if (camHeight > BLDG_MAX_VIEW_HEIGHT) { _clearVWorldBuildings(); return; }
+
+        // Use the point the camera is actually looking at (screen centre ray
+        // hitting the globe), not computeViewRectangle — a pitched camera's
+        // view rectangle balloons to the horizon, producing a huge geomFilter
+        // BOX that VWorld rejects (returns 0 features).
+        var canvas = viewer.scene.canvas;
+        var centerPx = new Cesium.Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
+        var ray = viewer.camera.getPickRay(centerPx);
+        var hit = ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+        var carto = hit ? Cesium.Cartographic.fromCartesian(hit)
+                        : viewer.camera.positionCartographic;
+        var clat = Cesium.Math.toDegrees(carto.latitude);
+        var clon = Cesium.Math.toDegrees(carto.longitude);
+
+        // Box scales with altitude but must stay under VWorld's 10 km²
+        // geomFilter limit. At lat ~37.5 a 0.014° half-margin (0.028° side)
+        // is ~7.6 km² — safely under the cap; bigger boxes return an error
+        // (INVALID_RANGE) and hence zero buildings.
+        var margin = Math.max(0.004, Math.min(camHeight * 0.000006, 0.014));
+        var w = clon - margin, e = clon + margin, s = clat - margin, n = clat + margin;
+        if (e < 123 || w > 132.5 || n < 32 || s > 39.5) { _clearVWorldBuildings(); return; }
+
+        var key = [w.toFixed(3), s.toFixed(3), e.toFixed(3), n.toFixed(3)].join(",");
+        if (key === _bldgLastKey) return;
+        _bldgLastKey = key;
+
+        qgcBridge.requestBuildings(w, s, e, n);
+    }
+
+    // Called by QML with the VWorld GetFeature JSON (string).
+    function renderVWorldBuildings(featuresJson) {
+        if (!viewer) return;
+        var feats;
+        try { feats = JSON.parse(featuresJson); } catch (e) { feats = []; }
+
+        // Collect each building's outer ring + floor count, plus one sample
+        // point for terrain height. Extruded polygons IGNORE heightReference,
+        // so to make a building sit ON the ground (not at absolute height 0,
+        // where Seoul's ~30 m terrain + depth testing buries it) we sample the
+        // terrain height at the building and set absolute base/top heights.
+        var builds = [];
+        var samplePts = [];
+        feats.forEach(function (f) {
+            var floors = parseInt(f.properties.gro_flo_co, 10);
+            if (!floors || floors < 1) floors = 1;
+            var geom = f.geometry;
+            var polys = (geom.type === "MultiPolygon") ? geom.coordinates
+                      : (geom.type === "Polygon") ? [geom.coordinates] : [];
+            polys.forEach(function (poly) {
+                var ring = poly[0];   // outer ring
+                if (!ring || ring.length < 3) return;
+                var flat = [];
+                ring.forEach(function (c) { flat.push(c[0], c[1]); });
+                builds.push({ flat: flat, bldgHeight: floors * FLOOR_HEIGHT_M,
+                              sampleIdx: samplePts.length });
+                samplePts.push(Cesium.Cartographic.fromDegrees(ring[0][0], ring[0][1]));
+            });
+        });
+
+        var addAll = function (groundHeights) {
+            _clearVWorldBuildings();
+            builds.forEach(function (b) {
+                var base = groundHeights ? groundHeights[b.sampleIdx] : 0;
+                var ent = viewer.entities.add({
+                    polygon: {
+                        hierarchy: Cesium.Cartesian3.fromDegreesArray(b.flat),
+                        height: base,                         // base on the terrain
+                        extrudedHeight: base + b.bldgHeight,  // roof
+                        material: Cesium.Color.fromCssColorString("#d9d0c3").withAlpha(0.95),
+                        outline: true,
+                        outlineColor: Cesium.Color.fromCssColorString("#6b6256"),
+                        closeTop: true, closeBottom: true,
+                    },
+                });
+                buildingEntities.push(ent);
+            });
+        };
+
+        // Sample terrain for all buildings in one batch, then build them.
+        if (samplePts.length && viewer.terrainProvider) {
+            Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, samplePts)
+                .then(function (updated) {
+                    addAll(updated.map(function (c) { return c.height || 0; }));
+                })
+                .catch(function () { addAll(null); });
+        } else {
+            addAll(null);
+        }
+    }
+
+    function _scheduleBuildingLoad() {
+        if (_bldgLoadTimer) clearTimeout(_bldgLoadTimer);
+        _bldgLoadTimer = setTimeout(loadVWorldBuildings, 400);
+    }
+
     // centerLon/centerLat/centerHeight describe the QGC 2D map's current
     // view, so the 3D view opens looking at the same place.
     function initCesium(token, vworldToken, centerLon, centerLat, centerHeight) {
@@ -126,7 +246,10 @@
         VEHICLE_ICON = createVehicleIcon();
 
         if (vworldToken && vworldToken.length > 0) {
+            VWORLD_TOKEN = vworldToken;
             addVWorldLayers(vworldToken);
+            // Load/refresh extruded 3D buildings whenever the camera settles.
+            viewer.camera.moveEnd.addEventListener(_scheduleBuildingLoad);
         }
 
         // Open on the same spot the 2D map is showing (fallback: Korea).
@@ -153,6 +276,9 @@
                 );
             }
         }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+        // Initial building load (setView doesn't fire camera.moveEnd).
+        if (VWORLD_TOKEN) _scheduleBuildingLoad();
 
         _cesiumInitialized = true;
         if (_bridgeReady && qgcBridge) qgcBridge.cesiumReady();
