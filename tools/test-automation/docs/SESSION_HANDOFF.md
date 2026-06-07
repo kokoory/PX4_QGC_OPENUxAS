@@ -66,7 +66,9 @@ cd PX4_QGC_OPENUxAS && git submodule update --init --recursive   # QGC 빌드에
 1. **환경 재현 검증**: 아래 "즉시 재시작 시퀀스"로 단일 v1 자동 비행 체인이 새 호스트에서도 도는지 확인 (지난 세션에서 성공한 지점 재현)
 2. **[1순위] AUTO.MISSION waypoint 미순회 디버그**: 업로드는 정상(21개)인데 즉시 LOITER 복귀(MISSION_CURRENT state=5 COMPLETE). → `waypoints_from_mission_command` 출력 좌표를 덤프해 실제 폴리곤 순회 경로인지 검증, 첫 item/고도(80m vs 현재 220m) 정리. 상세는 아래 "남은 refinement"
 3. **[2순위] Cessna(v4) 자동 ARM 실패** — 해결책 후보는 "미해결 이슈" 표 참조
-4. **[3순위] Cesium 3D 버튼 segfault** (exit 139) — §3 디버그 후보 참조
+4. ~~[3순위] Cesium 3D 버튼 segfault~~ → **2026-06-07 해결됨**. 원인은 main.cc의 AppArmor sandbox
+   자동 우회 코드(이미 작성돼 있었음)가 **구 바이너리(5/8 빌드)에 미포함**이었던 것. 재빌드 후
+   env 변수 없이 Cesium 진입 + 토글 4회 검증 완료. 새 호스트에서는 §1의 QGC 빌드만 하면 끝
 5. Tier 1-2/Tier 3 멀티 vehicle 확장 + 보고서 §6.7 갱신
 
 ---
@@ -130,7 +132,7 @@ cd /home/donghoon/myclaude/qgroundcontrol/tools/test-automation
 # 셸 4 — QGC (선택, 시각화용)
 DISPLAY=:0 QTWEBENGINE_DISABLE_SANDBOX=1 \
     /home/donghoon/myclaude/qgroundcontrol/build/Release/QGroundControl &
-# 주의: 3D 버튼 누르지 말 것 — 현재 segfault (별도 디버그 항목)
+# (2026-06-07) 3D 버튼 segfault 해결됨 — 재빌드 바이너리에서 Cesium 3D 사용 가능
 
 # Tier 1-1 발행 (멀티콥터 v1 area search)
 cd /home/donghoon/myclaude/qgroundcontrol/tools/test-automation/scripts
@@ -180,7 +182,7 @@ python3 -u uxas_publish_task.py area \
 |---|---|---|
 | 1 | **멀티콥터 자동 비행 라이브 검증** | 코드 작성 완료, 실 시험 직전 종료. 위 시퀀스로 즉시 가능 |
 | 2 | **Cessna 자동 ARM 실패** | spawn z=300으로도 PX4 GPS lock 전에 추락 → `ARM ack result=1 (FAIL)`. 해결책 후보: (a) gz_standard_vtol로 변경, (b) korea.sdf에 활주로 모델 추가, (c) PX4 GPS lock 가속 파라미터 |
-| 3 | **QGC Cesium 3D 버튼 segfault** | `exit code 139`. WebEngineView 또는 Cesium ion 토큰 관련. `/src/Viewer3D/Viewer3DQml/Cesium3DView.qml`에서 디버그 필요 |
+| 3 | ~~QGC Cesium 3D 버튼 segfault~~ | **2026-06-07 해결**. 원인 = 구 바이너리에 main.cc sandbox 우회 미포함. 재빌드로 해소, 토글 검증 완료 |
 | 4 | Tier 1-2 / Tier 3 자동 비행 확장 | 1번 끝나면 자연스럽게 |
 | 5 | 보고서 `QGC_UxAS_MixedFleet_Report.md` §6.7 갱신 | 라이브 결과 추가 |
 
@@ -251,9 +253,13 @@ python3 -u uxas_publish_task.py area \
 | `src/Viewer3D/CMakeLists.txt`, `src/CMakeLists.txt` | `Qt6::WebEngineQuick` 링크, `QGC_CESIUM3D_ENABLED` 컴파일 플래그 |
 | `CMakeLists.txt` | Qt6 components에 `WebEngineQuick` 추가 |
 
-**미해결 이슈**: 3D 버튼 클릭 시 QGC `exit 139 (SIGSEGV)`. WebEngineView 생성 시점 또는 Cesium ion 토큰 미설정 상태의 JS 에러로 추정. 다음 세션 디버그 후보:
-- 토큰이 빈 문자열일 때 `initCesium("")` 호출하는 부분 (`Cesium3DView.qml:39`) — 빈 토큰 가드 추가
-- WebEngineView 부모 destruct 타이밍 — `cesium3DLoader.onActiveChanged`에서 setSource 호출 패턴이 안전한지
+**~~미해결 이슈~~ → 2026-06-07 해결됨**: 3D 버튼 클릭 시 `exit 139 (SIGSEGV)`의 원인은 QML/JS가 아니라
+**§2의 AppArmor sandbox 문제 그 자체**였다. main.cc의 자동 우회 코드는 5/29 세션에 working tree에
+추가됐지만 당시 바이너리(5/8 빌드)에는 컴파일돼 있지 않았던 것. gdb로 확인한 사실:
+- env 없이 구 바이너리 실행 + 3D 클릭 → `libQt6WebEngineCore` 내부 SIGSEGV 재현
+- `QTWEBENGINE_DISABLE_SANDBOX=1` 설정 시 → Cesium 지구본 정상 렌더링
+- 재빌드 후 env 없이 → 정상 (자동 우회 작동), Cesium↔Map 토글 반복에도 안정 (Loader 생명주기 문제 없음)
+- 한때 의심했던 빈 토큰 `initCesium("")`은 무관 (토큰 없으면 버튼이 Cesium3D 모드로 진입 자체를 안 함)
 
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 

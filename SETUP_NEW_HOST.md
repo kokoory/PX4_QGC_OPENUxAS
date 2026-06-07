@@ -123,7 +123,7 @@ SESSION_HANDOFF.md "즉시 재시작 시퀀스"의 4-셸 절차 그대로:
 1. 셸 1: UxAS (`uxas_multi.xml`, 포트 5560/5561)
 2. 셸 2: `./scripts/launch_all.sh --fleet mixed_small` — **새 호스트는 `SIM_SPEED` 불필요 (기본 1.0)**
 3. 셸 3: `./scripts/launch_bridges.sh --fleet mixed_small` — v1/v2 자동 ARM+TAKEOFF(220 m) 확인
-4. 셸 4(선택): QGC — ⚠️ **3D 버튼 누르지 말 것** (segfault, 미해결 이슈 #3)
+4. 셸 4(선택): QGC — Cesium 3D 버튼 사용 가능 (segfault는 2026-06-07 해결: 재빌드 바이너리 기준)
 5. `uxas_publish_task.py area ...` 발행 → 200 m AGL 통과 시 mission 자동 upload → AUTO.MISSION 확인
 
 기대 결과: ARM ack=0 → TAKEOFF ack=0 → 21-wp upload → AUTO.MISSION 전환 (구 호스트 2026-05-29 검증 완료)
@@ -134,7 +134,7 @@ SESSION_HANDOFF.md "즉시 재시작 시퀀스"의 4-셸 절차 그대로:
 |---|---|---|
 | 1 | **AUTO.MISSION waypoint 미순회 디버그** | 업로드 정상(21개)인데 즉시 LOITER 복귀. `waypoints_from_mission_command` 좌표 덤프부터 |
 | 2 | **Cessna(v4) 자동 ARM 실패** | 공중 spawn z=300에도 GPS lock 전 추락. 후보: gz_standard_vtol / 활주로 모델 / GPS lock 가속 |
-| 3 | **Cesium 3D 버튼 segfault (exit 139)** | 빈 토큰 `initCesium("")` 가드, WebEngineView 생명주기 |
+| 3 | ~~Cesium 3D 버튼 segfault~~ | **2026-06-07 해결** — 원인은 구 바이너리에 main.cc AppArmor sandbox 우회 미포함. 새 호스트는 §4 빌드만 하면 됨 (SESSION_HANDOFF §3 참조) |
 | 4 | **멀티 vehicle 동시 비행** | 구 호스트에선 lockstep starvation으로 불가 — 새 호스트의 본 목적. Tier 1-2/Tier 3 |
 | 5 | 보고서 `QGC_UxAS_MixedFleet_Report.md` §6.7 갱신 | 라이브 결과 반영 |
 
