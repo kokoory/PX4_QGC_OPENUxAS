@@ -34,33 +34,6 @@ Item {
     // Click context for guided actions
     property var _clickCoord: QtPositioning.coordinate()
 
-    // --- OpenUxAS mission-planning defaults (right-click search) -------
-    // A small, sane default set so the operator can plan a search from the
-    // 3D view with one click. uxas_search_listener.py applies them.
-    property string uxasVehicles:       "1"     // comma-sep vehicle IDs
-    property real   uxasAreaAltitude:   80       // m AGL for area search
-    property real   uxasLineAltitude:   120      // m AGL for road/river
-    property real   uxasAreaHalfSize:   150      // m, half-side of area box
-    property real   uxasLineHalfBox:    700      // m, half-side of road/river bbox
-    property real   uxasRegionRadius:   3000     // m, KeepIn operating region
-
-    // Broadcast a UxAS search request centred on the right-clicked point.
-    function _sendUxasSearch(kind) {
-        if (!_clickCoord.isValid) return
-        var isArea = (kind === "area")
-        EventBroadcaster.sendEvent("uxas_search", kind, {
-            "center_lat":    _clickCoord.latitude,
-            "center_lon":    _clickCoord.longitude,
-            "vehicles":      uxasVehicles,
-            "altitude":      isArea ? uxasAreaAltitude : uxasLineAltitude,
-            "half_size_m":   isArea ? uxasAreaHalfSize : uxasLineHalfBox,
-            "region_radius": uxasRegionRadius
-        })
-        // Visual confirmation: drop the goto indicator at the search centre.
-        webView.runJavaScript('showGotoIndicator(' + _clickCoord.latitude + ','
-                              + _clickCoord.longitude + ',0)')
-    }
-
     WebEngineView {
         id: webView
         anchors.fill: parent
@@ -96,6 +69,12 @@ Item {
             }
         }
     }
+
+    // NOTE: the search-planning panel lives in the Cesium HTML page, not as a
+    // QML overlay. The WebEngineView renders in its own compositor layer and
+    // occludes sibling QML items (Popups included), so an in-page HTML panel
+    // is the only thing reliably drawn over the globe. The panel calls back
+    // into qgcBridge.publishSearch() to broadcast the UxAS request.
 
     QtObject {
         id: qgcBridge
@@ -149,6 +128,28 @@ Item {
             contextMenu.x = screenX;
             contextMenu.y = screenY;
             contextMenu.open();
+        }
+
+        // Called from the in-page HTML planning panel to publish a UxAS search.
+        // The page passes the chosen centre + a JSON params blob; we broadcast
+        // it on EventBroadcaster (UDP 45678) for uxas_search_listener.py.
+        function publishSearch(kind, lat, lon, paramsJson) {
+            var p = {}
+            try { p = JSON.parse(paramsJson) } catch (e) { p = {} }
+            var data = {
+                "center_lat":    lat,
+                "center_lon":    lon,
+                "vehicles":      p.vehicles || "1",
+                "altitude":      p.altitude || 100,
+                "region_radius": p.region_radius || 3000
+            }
+            if (kind === "area") {
+                data["width_m"]  = p.width_m || 1000
+                data["height_m"] = p.height_m || 1000
+            } else {
+                data["half_size_m"] = p.half_size_m || 700
+            }
+            EventBroadcaster.sendEvent("uxas_search", kind, data)
         }
     }
 
@@ -211,27 +212,6 @@ Item {
                     _clickCoord
                 );
             }
-        }
-
-        MenuSeparator {}
-
-        // --- OpenUxAS search planning ---------------------------------
-        // Broadcasts the chosen search centred on the right-clicked point
-        // over EventBroadcaster (UDP 45678). uxas_search_listener.py picks
-        // it up, builds the LMCP task (area / VWorld road / VWorld river)
-        // and publishes it to UxAS, which assigns the vehicle and the bridge
-        // flies it.
-        MenuItem {
-            text: qsTr("UxAS: area search here")
-            onTriggered: root._sendUxasSearch("area")
-        }
-        MenuItem {
-            text: qsTr("UxAS: road search here (VWorld)")
-            onTriggered: root._sendUxasSearch("road")
-        }
-        MenuItem {
-            text: qsTr("UxAS: river search here (VWorld)")
-            onTriggered: root._sendUxasSearch("river")
         }
 
         MenuSeparator {}

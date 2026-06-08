@@ -355,6 +355,21 @@ python3 -u uxas_publish_task.py area \
 - **확장 여지**: 현재는 클릭 지점 중심 고정 박스. 폴리곤 직접 그리기/도로명 선택/파라미터
   다이얼로그는 추후. river는 박스 내 최대 하천 폴리곤 사용(이름 무관).
 
+**2026-06-08 영역 크기 UI 패널 (3D 뷰 안 HTML 패널)**:
+- 3D 뷰 우상단에 **영역 크기 설정 패널**: Width/Height/Altitude(m), Sensor(Wide 45°/Detail 20°),
+  Vehicles. 값을 바꾸면 **필요 X500 대수를 실시간 계산** ("Area 4.00 km² · GSD 12 cm /
+  1 X500 ≈ 1.18 km² → need 4 X500"). [Set vehicles to N] 버튼이 차량 IDs를 1..N으로 채움.
+  [Publish Area/Road/River] 버튼 → 화면 중앙 지점을 중심으로 `qgcBridge.publishSearch`로 발행.
+- **핵심 결정 — 패널은 QML이 아니라 Cesium HTML 안의 div**: `WebEngineView`가 자체 컴포지터
+  레이어라 형제 QML(Popup 포함)을 **가린다**(여러 번 재현 확인). 따라서 패널을 페이지 안
+  HTML(`#uxasPanel`, z-index)로 넣어야 지구본 위에 확실히 그려짐. 커버리지 계산도 JS(`_uxCoverage`).
+  QML 쪽은 `qgcBridge.publishSearch(kind, lat, lon, paramsJson)` 하나만 추가(EventBroadcaster 방송).
+- **검증 상태**: 패널 렌더 + 실시간 계산("4 km² → need 4 X500")은 **시각적으로 확정**. 리스너는
+  width/height 사각형 발행 명령 생성까지 검증(수동 UDP). **Publish 버튼→발행 링크는 합성 입력
+  (XTEST)이 내장 Chromium에 클릭으로 등록되지 않아 헤드리스로 못 띄움** — 실제 마우스 클릭은 정상.
+- **좌표계 주의**: 발행은 **화면 중앙 ray가 지면에 닿는 지점**을 중심으로 함(우클릭 불필요).
+  영역을 화면에 프레이밍한 뒤 Publish.
+
 ### 4. QGC 사용자 설정 (`~/.config/QGroundControl/QGroundControl.ini`)
 
 `[LinkConfigurations]`에서 명시적 UDP listener들(Link1/2/3 = 14541/14542/14544)을 **제거**했음. PX4 SITL이 normal MAVLink를 14550으로 모두 송신해 QGC가 자동 검색하므로 명시 등록 불필요. sys_id 2/3/5로 vehicle 구분.

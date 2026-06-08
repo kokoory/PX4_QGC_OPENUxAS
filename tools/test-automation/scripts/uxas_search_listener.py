@@ -43,9 +43,10 @@ def _meters_to_deg(center_lat, dm):
     return dlat, dlon
 
 
-def _square_polygon(lat, lon, half_m):
-    dlat, dlon = _meters_to_deg(lat, half_m)
-    # CCW square: SW, SE, NE, NW
+def _rect_polygon(lat, lon, half_w_m, half_h_m):
+    dlat, _ = _meters_to_deg(lat, half_h_m)
+    _, dlon = _meters_to_deg(lat, half_w_m)
+    # CCW rectangle: SW, SE, NE, NW
     return [(lat - dlat, lon - dlon), (lat - dlat, lon + dlon),
             (lat + dlat, lon + dlon), (lat + dlat, lon - dlon)]
 
@@ -65,7 +66,6 @@ class SearchDispatcher:
         lon = float(data["center_lon"])
         vehicles = str(data.get("vehicles", self.args.vehicles))
         altitude = float(data.get("altitude", 80))
-        half_m = float(data.get("half_size_m", 150))
         radius = float(data.get("region_radius", 3000))
         task_id, req_id, zone_id, region_id = self._next_ids()
         region = f"{lat:.7f},{lon:.7f},{radius:.0f}"
@@ -80,11 +80,14 @@ class SearchDispatcher:
         ]
 
         if kind == "area":
-            poly = _square_polygon(lat, lon, half_m)
+            half_w = float(data.get("width_m", data.get("half_size_m", 300))) / 2.0
+            half_h = float(data.get("height_m", data.get("half_size_m", 300))) / 2.0
+            poly = _rect_polygon(lat, lon, half_w, half_h)
             pts = [f"{a:.7f},{b:.7f}" for a, b in poly]
             cmd = [sys.executable, str(SCRIPT_DIR / "uxas_publish_task.py"),
                    "area", "--polygon", *pts] + common
         elif kind in ("road", "river"):
+            half_m = float(data.get("half_size_m", 700))
             dlat, dlon = _meters_to_deg(lat, half_m)
             bbox = f"{lat - dlat:.7f},{lon - dlon:.7f},{lat + dlat:.7f},{lon + dlon:.7f}"
             cmd = [sys.executable, str(SCRIPT_DIR / "vworld_uxas_search.py"),

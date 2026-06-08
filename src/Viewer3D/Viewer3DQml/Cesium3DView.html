@@ -23,10 +23,66 @@
         .cesium-viewer-bottom {
             display: none !important;
         }
+        /* OpenUxAS area-search planning panel (in-page, draws over the globe) */
+        #uxasPanel {
+            position: absolute; top: 10px; right: 10px; width: 250px;
+            background: rgba(24,28,34,0.90); color: #e8e8e8;
+            font: 12px/1.4 sans-serif; border: 1px solid #5a6472;
+            border-radius: 6px; padding: 8px 10px; z-index: 1000;
+            user-select: none;
+        }
+        #uxasPanel h3 { margin: 0 0 6px 0; font-size: 13px; display: flex;
+            justify-content: space-between; align-items: center; }
+        #uxasPanel .row { display: flex; justify-content: space-between;
+            align-items: center; margin: 3px 0; }
+        #uxasPanel label { color: #b8c0cc; }
+        #uxasPanel input, #uxasPanel select {
+            width: 110px; background: #11151b; color: #e8e8e8;
+            border: 1px solid #3a4150; border-radius: 3px; padding: 2px 4px;
+            font-size: 12px;
+        }
+        #uxasPanel .calc { margin: 6px 0; padding: 5px 0;
+            border-top: 1px solid #3a4150; border-bottom: 1px solid #3a4150; }
+        #uxasPanel .need { font-weight: bold; color: #ffd24a; }
+        #uxasPanel button {
+            margin: 2px 0; padding: 4px 6px; width: 100%; cursor: pointer;
+            background: #2d4a6b; color: #fff; border: 1px solid #3a5a82;
+            border-radius: 3px; font-size: 12px;
+        }
+        #uxasPanel button.go { background: #2f7d4f; border-color: #3a9a60; }
+        #uxasPanel button:hover { filter: brightness(1.15); }
+        #uxasPanel .hint { color: #8aa; font-size: 11px; margin-top: 4px; }
+        #uxasPanel.collapsed .body { display: none; }
+        #uxasToggle { cursor: pointer; padding: 0 6px; }
     </style>
 </head>
 <body>
     <div id="cesiumContainer"></div>
+
+    <div id="uxasPanel">
+        <h3>UxAS Area Search <span id="uxasToggle">–</span></h3>
+        <div class="body">
+            <div class="row"><label>Width (m)</label>
+                <input id="uxW" type="number" value="2000" min="50" step="100"></div>
+            <div class="row"><label>Height (m)</label>
+                <input id="uxH" type="number" value="2000" min="50" step="100"></div>
+            <div class="row"><label>Altitude (m)</label>
+                <input id="uxAlt" type="number" value="150" min="20" step="10"></div>
+            <div class="row"><label>Sensor</label>
+                <select id="uxMode">
+                    <option value="wide">Wide (45°)</option>
+                    <option value="detail">Detail (20°)</option>
+                </select></div>
+            <div class="row"><label>Vehicles</label>
+                <input id="uxVeh" type="text" value="1"></div>
+            <div class="calc" id="uxCalc">–</div>
+            <button id="uxSetN">Set vehicles to need</button>
+            <button class="go" id="uxGoArea">Publish Area Search (view centre)</button>
+            <button id="uxGoRoad">Publish Road Search</button>
+            <button id="uxGoRiver">Publish River Search</button>
+            <div class="hint">Frames the area on the current view centre.</div>
+        </div>
+    </div>
     <script>
     "use strict";
 
@@ -635,6 +691,107 @@
             if (map[vehicleId]) { viewer.entities.remove(map[vehicleId]); delete map[vehicleId]; }
         });
     }
+
+    // ===============================================================
+    // OpenUxAS area-search planning panel (in-page; renders over the globe)
+    // ===============================================================
+    var areaPreviewEntity = null;
+
+    function _uxEl(id) { return document.getElementById(id); }
+
+    // One X500 sortie coverage model — mirrors the planning calc.
+    function _uxCoverage() {
+        var w = parseFloat(_uxEl("uxW").value) || 0;
+        var h = parseFloat(_uxEl("uxH").value) || 0;
+        var alt = parseFloat(_uxEl("uxAlt").value) || 100;
+        var detail = _uxEl("uxMode").value === "detail";
+        var hfov = detail ? 20 : 45, overlap = detail ? 0.25 : 0.20;
+        var speed = detail ? 10 : 12, eff = 0.75, onSta = 22 * 60;
+        var swath = 2 * alt * Math.tan(hfov * Math.PI / 360);
+        var perDrone = swath * (1 - overlap) * speed * eff * onSta;   // m²
+        var area = w * h;
+        return {
+            areaKm2: area / 1e6, gsdCm: (swath / 1024) * 100,
+            perDroneKm2: perDrone / 1e6,
+            drones: Math.max(1, Math.ceil(area / Math.max(1, perDrone))),
+            w: w, h: h, alt: alt
+        };
+    }
+
+    function _uxRefreshCalc() {
+        var c = _uxCoverage();
+        _uxEl("uxCalc").innerHTML =
+            "Area <b>" + c.areaKm2.toFixed(2) + " km²</b> · GSD " + c.gsdCm.toFixed(0) + " cm<br>"
+          + "1 X500 ≈ " + c.perDroneKm2.toFixed(2) + " km² → "
+          + "<span class='need'>need " + c.drones + " X500</span>";
+        _uxEl("uxSetN").textContent = "Set vehicles to " + c.drones;
+    }
+
+    // Ground point at the centre of the screen (what the camera looks at).
+    function _uxViewCentre() {
+        if (!viewer) return null;
+        var cv = viewer.scene.canvas;
+        var px = new Cesium.Cartesian2(cv.clientWidth / 2, cv.clientHeight / 2);
+        var ray = viewer.camera.getPickRay(px);
+        var hit = ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+        var carto = hit ? Cesium.Cartographic.fromCartesian(hit)
+                        : viewer.camera.positionCartographic;
+        return { lat: Cesium.Math.toDegrees(carto.latitude),
+                 lon: Cesium.Math.toDegrees(carto.longitude) };
+    }
+
+    function _uxDrawAreaPreview(lat, lon, w, h) {
+        if (!viewer) return;
+        if (areaPreviewEntity) { viewer.entities.remove(areaPreviewEntity); areaPreviewEntity = null; }
+        var dLat = (h / 2) / 111320.0;
+        var dLon = (w / 2) / (111320.0 * Math.cos(lat * Math.PI / 180));
+        areaPreviewEntity = viewer.entities.add({
+            polygon: {
+                hierarchy: Cesium.Cartesian3.fromDegreesArray([
+                    lon - dLon, lat - dLat,  lon + dLon, lat - dLat,
+                    lon + dLon, lat + dLat,  lon - dLon, lat + dLat]),
+                material: Cesium.Color.YELLOW.withAlpha(0.18),
+                outline: true, outlineColor: Cesium.Color.YELLOW,
+                classificationType: Cesium.ClassificationType.TERRAIN,
+            },
+        });
+    }
+
+    function _uxPublish(kind) {
+        if (!qgcBridge) return;
+        var c = _uxViewCentre();
+        if (!c) return;
+        var cov = _uxCoverage();
+        var params = {
+            vehicles: _uxEl("uxVeh").value || "1",
+            altitude: cov.alt,
+            region_radius: Math.max(2000, Math.max(cov.w, cov.h)),
+        };
+        if (kind === "area") { params.width_m = cov.w; params.height_m = cov.h;
+            _uxDrawAreaPreview(c.lat, c.lon, cov.w, cov.h); }
+        else { params.half_size_m = Math.min(900, Math.max(cov.w, cov.h) / 2); }
+        qgcBridge.publishSearch(kind, c.lat, c.lon, JSON.stringify(params));
+    }
+
+    function _uxInitPanel() {
+        ["uxW", "uxH", "uxAlt", "uxMode", "uxVeh"].forEach(function (id) {
+            _uxEl(id).addEventListener("input", _uxRefreshCalc);
+        });
+        _uxEl("uxSetN").addEventListener("click", function () {
+            var n = _uxCoverage().drones, ids = [];
+            for (var i = 1; i <= n; i++) ids.push(i);
+            _uxEl("uxVeh").value = ids.join(",");
+        });
+        _uxEl("uxGoArea").addEventListener("click", function () { _uxPublish("area"); });
+        _uxEl("uxGoRoad").addEventListener("click", function () { _uxPublish("road"); });
+        _uxEl("uxGoRiver").addEventListener("click", function () { _uxPublish("river"); });
+        _uxEl("uxasToggle").addEventListener("click", function () {
+            var p = _uxEl("uxasPanel"); p.classList.toggle("collapsed");
+            _uxEl("uxasToggle").textContent = p.classList.contains("collapsed") ? "+" : "–";
+        });
+        _uxRefreshCalc();
+    }
+    document.addEventListener("DOMContentLoaded", _uxInitPanel);
     </script>
 </body>
 </html>
