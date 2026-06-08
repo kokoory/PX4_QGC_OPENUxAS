@@ -87,7 +87,7 @@
                 <div class="tab" data-tab="river">River</div>
             </div>
 
-            <!-- shared: fleet + altitude -->
+            <!-- shared: fleet + altitude + sensor + coverage (all tabs) -->
             <div class="row"><label>X500</label>
                 <span class="veh"><input id="uxNX500" type="number" value="1" min="0" max="5">
                 <label>Cessna</label><input id="uxNCessna" type="number" value="0" min="0" max="1"></span></div>
@@ -95,6 +95,12 @@
                 <input id="uxVeh" type="text" value="1"></div>
             <div class="row"><label>Altitude (m)</label>
                 <input id="uxAlt" type="number" value="150" min="20" step="10"></div>
+            <div class="row"><label>Sensor</label>
+                <select id="uxMode">
+                    <option value="wide">Wide (45°)</option>
+                    <option value="detail">Detail (20°)</option>
+                </select></div>
+            <div class="calc" id="uxCalc">–</div>
 
             <!-- AREA -->
             <div class="tabBody active" id="tab-area">
@@ -116,12 +122,6 @@
                     </div>
                     <div class="hint" id="uxPolyInfo">0 points</div>
                 </div>
-                <div class="row"><label>Sensor</label>
-                    <select id="uxMode">
-                        <option value="wide">Wide (45°)</option>
-                        <option value="detail">Detail (20°)</option>
-                    </select></div>
-                <div class="calc" id="uxCalc">–</div>
                 <button id="uxSetN">Set vehicles to need</button>
                 <button class="go" id="uxGoArea">Publish Area Search</button>
                 <div class="hint">Rectangle/polygon centred on the view; Preview before publish.</div>
@@ -825,13 +825,39 @@
         var w = parseFloat(_uxEl("uxW").value) || 0, h = parseFloat(_uxEl("uxH").value) || 0;
         return w * h;
     }
+    // Total length (km) of selected road/river features (for the readout).
+    function _uxSelectedLengthKm(kind) {
+        var km = 0;
+        Object.keys(featData[kind]).forEach(function (nm) {
+            if (!featData[kind][nm].selected) return;
+            (featData[kind][nm].segs || []).forEach(function (seg) {
+                for (var i = 1; i < seg.length; i++) {
+                    var a = seg[i - 1], b = seg[i];
+                    var dx = (b[0] - a[0]) * 111.32 * Math.cos(a[1] * Math.PI / 180);
+                    var dy = (b[1] - a[1]) * 111.32;
+                    km += Math.sqrt(dx * dx + dy * dy);
+                }
+            });
+        });
+        return km;
+    }
     function _uxRefreshCalc() {
         var c = _uxCoverage();
-        _uxEl("uxCalc").innerHTML =
-            "Area <b>" + c.areaKm2.toFixed(2) + " km²</b> · GSD " + c.gsdCm.toFixed(0) + " cm<br>"
-          + "1 X500 ≈ " + c.perDroneKm2.toFixed(2) + " km² → "
-          + "<span class='need'>need " + c.drones + " X500</span>";
-        _uxEl("uxSetN").textContent = "Set vehicles to " + c.drones;
+        if (uxTab === "area") {
+            _uxEl("uxCalc").innerHTML =
+                "Area <b>" + c.areaKm2.toFixed(2) + " km²</b> · GSD " + c.gsdCm.toFixed(0) + " cm<br>"
+              + "1 X500 ≈ " + c.perDroneKm2.toFixed(2) + " km² → "
+              + "<span class='need'>need " + c.drones + " X500</span>";
+            _uxEl("uxSetN").textContent = "Set vehicles to " + c.drones;
+        } else {
+            // road/river: sensor footprint (GSD) + selected count/length
+            var sel = _uxSelectedNames(uxTab);
+            var km = _uxSelectedLengthKm(uxTab);
+            _uxEl("uxCalc").innerHTML =
+                "GSD <b>" + c.gsdCm.toFixed(0) + " cm</b> @ " + (parseFloat(_uxEl("uxAlt").value) || 0).toFixed(0) + " m<br>"
+              + "<span class='need'>" + sel.length + " selected</span>"
+              + (km > 0 ? " · " + km.toFixed(1) + " km" : "");
+        }
     }
 
     // ---- geometry helpers ------------------------------------------
@@ -1041,6 +1067,7 @@
         var cb = document.querySelector("input[data-kind='" + kind + "'][data-name='" + nm.replace(/'/g, "") + "']");
         if (cb) cb.checked = on;
         _uxSyncOverlay();
+        _uxRefreshCalc();
     }
     function _uxSelectAll(kind, on) {
         Object.keys(featData[kind]).forEach(function (nm) { _uxSetSelected(kind, nm, on); });
@@ -1112,6 +1139,7 @@
         var tabs = document.querySelectorAll("#uxasTabs .tab");
         tabs.forEach(function (el) { el.classList.toggle("active", el.getAttribute("data-tab") === t); });
         if (t === "area") _uxPreviewArea(); else _uxSyncOverlay();
+        _uxRefreshCalc();
     }
 
     function _uxInitPanel() {
