@@ -917,27 +917,53 @@
     }
 
     // ---- ROAD/RIVER scan, checklist, map-select --------------------
+    // The scan covers the AREA you selected on the Area tab (drawn polygon or
+    // the W×H rectangle), clamped to VWorld's 10 km² geomFilter limit. If you
+    // haven't sized an area, it falls back to a 2 km box at the view centre.
+    var VWORLD_MAX_KM2 = 9.0;
+    function _uxScanBbox() {
+        var poly = _uxAreaPolygonLatLon();   // [[lat,lon]...] of the selected area
+        var w, s, e, n;
+        if (poly && poly.length >= 2) {
+            s = Math.min.apply(null, poly.map(function (p) { return p[0]; }));
+            n = Math.max.apply(null, poly.map(function (p) { return p[0]; }));
+            w = Math.min.apply(null, poly.map(function (p) { return p[1]; }));
+            e = Math.max.apply(null, poly.map(function (p) { return p[1]; }));
+        } else {
+            var c = _uxViewCentre(); if (!c) return null;
+            var d = 1000 / 111320;
+            s = c.lat - d; n = c.lat + d; w = c.lon - d / Math.cos(c.lat * Math.PI / 180);
+            e = c.lon + d / Math.cos(c.lat * Math.PI / 180);
+        }
+        // Clamp to <=VWORLD_MAX_KM2 around the centroid (VWorld rejects bigger).
+        var clat = (s + n) / 2, clon = (w + e) / 2;
+        var hM = (n - s) * 111320, wM = (e - w) * 111320 * Math.cos(clat * Math.PI / 180);
+        var areaKm2 = (hM * wM) / 1e6, clamped = false;
+        if (areaKm2 > VWORLD_MAX_KM2) {
+            var k = Math.sqrt(VWORLD_MAX_KM2 / areaKm2);
+            hM *= k; wM *= k; clamped = true;
+            var dLat = (hM / 2) / 111320, dLon = (wM / 2) / (111320 * Math.cos(clat * Math.PI / 180));
+            s = clat - dLat; n = clat + dLat; w = clon - dLon; e = clon + dLon;
+        }
+        return { w: w, s: s, e: e, n: n, clat: clat, clon: clon, clamped: clamped };
+    }
     function _uxScan(kind) {
         if (!qgcBridge) return;
-        var c = _uxViewCentre(); if (!c) return;
-        var half = 1000;                                  // ~2 km box (<10 km²)
-        scanBox = { clat: c.lat, clon: c.lon, half: half };
-        var dLat = half / 111320, dLon = half / (111320 * Math.cos(c.lat * Math.PI / 180));
-        var w = c.lon - dLon, e = c.lon + dLon, s = c.lat - dLat, n = c.lat + dLat;
+        var bb = _uxScanBbox(); if (!bb) return;
+        scanBox = bb;
+        var info = _uxEl(kind === "road" ? "uxListRoad" : "uxListRiver");
+        info.innerHTML = "<div class='hint'>scanning"
+            + (bb.clamped ? " (area clamped to 9 km² VWorld limit)" : "") + "…</div>";
         var layer = (kind === "road") ? "LT_L_MOCTLINK" : "LT_C_WKMSTRM";
         var cb = (kind === "road") ? "renderRoadScan" : "renderRiverScan";
-        qgcBridge.requestVWorldLayer(layer, w, s, e, n, cb);
+        qgcBridge.requestVWorldLayer(layer, bb.w, bb.s, bb.e, bb.n, cb);
     }
     function _uxClipLine(ln, b) {   // b = {w,s,e,n}
         return ln.filter(function (c) { return c[0] >= b.w && c[0] <= b.e && c[1] >= b.s && c[1] <= b.n; });
     }
     function _uxGroupFeatures(kind, featuresJson) {
         var feats; try { feats = JSON.parse(featuresJson); } catch (e) { feats = []; }
-        var b = null;
-        if (scanBox) {
-            var dLat = scanBox.half / 111320, dLon = scanBox.half / (111320 * Math.cos(scanBox.clat * Math.PI / 180));
-            b = { w: scanBox.clon - dLon, e: scanBox.clon + dLon, s: scanBox.clat - dLat, n: scanBox.clat + dLat };
-        }
+        var b = scanBox ? { w: scanBox.w, e: scanBox.e, s: scanBox.s, n: scanBox.n } : null;
         var groups = {};   // name -> [ [lon,lat]... ] merged points (for preview)
         feats.forEach(function (f) {
             var nm = ((kind === "road" ? f.properties.road_name : f.properties.riv_nm) || "").trim();
@@ -1024,11 +1050,14 @@
         if (!qgcBridge || !scanBox) return;
         var sel = _uxSelectedNames(kind);
         var names = sel.length ? sel.join(",") : "ALL";
+        var spanM = Math.max((scanBox.n - scanBox.s) * 111320,
+                             (scanBox.e - scanBox.w) * 111320);
         qgcBridge.publishSearch(kind, scanBox.clat, scanBox.clon, JSON.stringify({
-            names: names, half_size_m: scanBox.half,
+            names: names,
+            bbox: [scanBox.w, scanBox.s, scanBox.e, scanBox.n],   // exact scan area
             vehicles: _uxEl("uxVeh").value || "1",
             altitude: parseFloat(_uxEl("uxAlt").value) || 120,
-            region_radius: Math.max(3000, scanBox.half * 2) }));
+            region_radius: Math.max(3000, spanM) }));
     }
 
     // map left-click: toggle the road/river under the cursor (by name)

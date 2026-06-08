@@ -97,10 +97,17 @@ class SearchDispatcher:
             # all under one AutomationRequest so UxAS spreads them across the
             # mixed fleet. names = "ALL" or a comma list (from the panel's
             # checklist / click-select / select-all — they all resolve here).
-            half_m = float(data.get("half_size_m", 1000))
-            dlat, dlon = _meters_to_deg(lat, half_m)
-            bbox = (f"{lat - dlat:.7f},{lon - dlon:.7f},"
-                    f"{lat + dlat:.7f},{lon + dlon:.7f}")
+            # Prefer the exact scan bbox [w,s,e,n] the panel measured; fall
+            # back to a square around the centre.
+            bb = data.get("bbox")
+            if bb and len(bb) == 4:
+                w, s, e, n = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                bbox = f"{s:.7f},{w:.7f},{n:.7f},{e:.7f}"
+            else:
+                half_m = float(data.get("half_size_m", 1000))
+                dlat, dlon = _meters_to_deg(lat, half_m)
+                bbox = (f"{lat - dlat:.7f},{lon - dlon:.7f},"
+                        f"{lat + dlat:.7f},{lon + dlon:.7f}")
             names = data.get("names", "ALL")
             if isinstance(names, (list, tuple)):
                 names = ",".join(str(n) for n in names) or "ALL"

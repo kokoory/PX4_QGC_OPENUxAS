@@ -150,8 +150,9 @@ Item {
                 data["width_m"]  = p.width_m || 1000
                 data["height_m"] = p.height_m || 1000
             } else {
-                // road/river: selected names (or "ALL") + scan box half-size
-                data["names"]       = p.names || "ALL"
+                // road/river: selected names (or "ALL") + the exact scan bbox
+                data["names"] = p.names || "ALL"
+                if (p.bbox !== undefined) data["bbox"] = p.bbox    // [w,s,e,n]
                 data["half_size_m"] = p.half_size_m || 1000
             }
             EventBroadcaster.sendEvent("uxas_search", kind, data)
