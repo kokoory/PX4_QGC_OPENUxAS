@@ -69,37 +69,60 @@ class SearchDispatcher:
         radius = float(data.get("region_radius", 3000))
         task_id, req_id, zone_id, region_id = self._next_ids()
         region = f"{lat:.7f},{lon:.7f},{radius:.0f}"
-
-        common = [
-            "--vehicles", vehicles, "--altitude", str(altitude),
-            "--task-id", str(task_id), "--request-id", str(req_id),
-            "--zone-id", str(zone_id), "--region-id", str(region_id),
-            "--with-operating-region", region,
-            "--wait-secs", str(self.args.wait_secs),
-            "--uxas-pub", self.args.uxas_pub, "--uxas-pull", self.args.uxas_pull,
-        ]
+        reg_cfg = data.get("register_from_config") or self.args.register_from_config
 
         if kind == "area":
-            half_w = float(data.get("width_m", data.get("half_size_m", 300))) / 2.0
-            half_h = float(data.get("height_m", data.get("half_size_m", 300))) / 2.0
-            poly = _rect_polygon(lat, lon, half_w, half_h)
+            # Explicit polygon if the panel drew one, else width×height rect.
+            poly_in = data.get("polygon")   # [[lat,lon], ...]
+            if poly_in and len(poly_in) >= 3:
+                poly = [(float(p[0]), float(p[1])) for p in poly_in]
+            else:
+                half_w = float(data.get("width_m", data.get("half_size_m", 300))) / 2.0
+                half_h = float(data.get("height_m", data.get("half_size_m", 300))) / 2.0
+                poly = _rect_polygon(lat, lon, half_w, half_h)
             pts = [f"{a:.7f},{b:.7f}" for a, b in poly]
             cmd = [sys.executable, str(SCRIPT_DIR / "uxas_publish_task.py"),
-                   "area", "--polygon", *pts] + common
+                   "area", "--polygon", *pts,
+                   "--vehicles", vehicles, "--altitude", str(altitude),
+                   "--task-id", str(task_id), "--request-id", str(req_id),
+                   "--zone-id", str(zone_id), "--region-id", str(region_id),
+                   "--with-operating-region", region,
+                   "--wait-secs", str(self.args.wait_secs),
+                   "--uxas-pub", self.args.uxas_pub, "--uxas-pull", self.args.uxas_pull]
+            if reg_cfg:
+                cmd += ["--register-from-config", reg_cfg]
+
         elif kind in ("road", "river"):
-            half_m = float(data.get("half_size_m", 700))
+            # Multi-feature: each selected road/river name -> its own task,
+            # all under one AutomationRequest so UxAS spreads them across the
+            # mixed fleet. names = "ALL" or a comma list (from the panel's
+            # checklist / click-select / select-all — they all resolve here).
+            half_m = float(data.get("half_size_m", 1000))
             dlat, dlon = _meters_to_deg(lat, half_m)
-            bbox = f"{lat - dlat:.7f},{lon - dlon:.7f},{lat + dlat:.7f},{lon + dlon:.7f}"
-            cmd = [sys.executable, str(SCRIPT_DIR / "vworld_uxas_search.py"),
-                   kind, "--bbox", bbox] + common
+            bbox = (f"{lat - dlat:.7f},{lon - dlon:.7f},"
+                    f"{lat + dlat:.7f},{lon + dlon:.7f}")
+            names = data.get("names", "ALL")
+            if isinstance(names, (list, tuple)):
+                names = ",".join(str(n) for n in names) or "ALL"
+            cmd = [sys.executable, str(SCRIPT_DIR / "vworld_multi_search.py"),
+                   kind, "--bbox", bbox, "--names", names,
+                   "--vehicles", vehicles, "--altitude", str(altitude),
+                   "--request-id", str(req_id), "--task-id-base", str(task_id),
+                   "--zone-id", str(zone_id), "--region-id", str(region_id),
+                   "--with-operating-region", region,
+                   "--wait-secs", str(self.args.wait_secs),
+                   "--uxas-pub", self.args.uxas_pub, "--uxas-pull", self.args.uxas_pull]
+            if reg_cfg:
+                cmd += ["--register-from-config", reg_cfg]
             if not os.environ.get("VWORLD_KEY") and self.args.vworld_key:
                 cmd += ["--key", self.args.vworld_key]
         else:
             print(f"[listener] unknown search kind: {kind}")
             return
 
+        nm = data.get("names", "")
         print(f"[listener] {kind} search @ ({lat:.5f},{lon:.5f}) "
-              f"vehicles={vehicles} alt={altitude:.0f} -> publishing task {task_id}")
+              f"vehicles={vehicles} alt={altitude:.0f} names={nm} -> publishing")
         # Run in a thread so a long --wait-secs doesn't block new events.
         threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
 
@@ -117,6 +140,10 @@ def main(argv=None) -> int:
     ap.add_argument("--vehicles", default="1",
                     help="Default vehicle IDs if the event omits them")
     ap.add_argument("--task-id-base", type=int, default=7000)
+    ap.add_argument("--register-from-config",
+                    default=str(SCRIPT_DIR.parent / "configs" / "vehicles.json"),
+                    help="vehicles.json for AirVehicleConfiguration registration "
+                         "(mixed-fleet capabilities drive UxAS auto-assignment)")
     ap.add_argument("--wait-secs", default="305")
     ap.add_argument("--uxas-pub", default="tcp://127.0.0.1:5560")
     ap.add_argument("--uxas-pull", default="tcp://127.0.0.1:5561")
