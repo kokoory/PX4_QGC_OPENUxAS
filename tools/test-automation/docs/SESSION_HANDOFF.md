@@ -1,5 +1,40 @@
 # 세션 핸드오프 노트
 
+## ★★★ 2026-06-08~09: QGC 3D 임무계획 패널 + VWorld + 올림픽대로 라이브 비행
+
+이 기간에 추가/검증된 것(모두 `kokoory/PX4_QGC_OPENUxAS` Add3Dmap에 push, HEAD `9edda44e5` 이후):
+
+**1) Cesium 3D 안 HTML 임무계획 패널** (`src/Viewer3D/Viewer3DQml/Cesium3DView.html` `#uxasPanel`)
+- QML이 아니라 **HTML div**인 이유: WebEngineView가 자체 레이어라 형제 QML(Popup 포함)을 가림. in-page HTML(z-index)만 지구본 위에 그려짐. (수차례 재현 확인)
+- **탭 Area/Road/River**. 공유 파라미터(모든 탭): X500/Cessna 개수 → vehicle IDs, Altitude, **Sensor(Wide45°/Detail20°)**, 커버리지 readout(Area=면적·need N X500 / Road·River=GSD·선택수·길이km).
+- **Area**: Rectangle(W×H) 또는 **Polygon 직접 그리기**(지도 클릭, 청록 점/선). 미리보기 노란 폴리곤.
+- **Road/River**: "Scan area"(=선택 영역 bbox, VWorld 10km² 클램프) → 이름 체크리스트 + **지도에서 선 클릭 선택** + Select all. 선택 시 초록 하이라이트.
+- 발행: `qgcBridge.publishSearch` → EventBroadcaster(UDP 45678) → `uxas_search_listener.py`.
+- **헤더 드래그로 이동** 가능. 패널은 화면 중앙 look-at 지점 기준.
+
+**2) VWorld(브이월드) 통합** (키 `4AB82F93-D134-3AFB-AEA8-59CB23854556`, Settings→General→VWorld 또는 .ini `vworldToken`)
+- 3D 위성+Hybrid(한글 라벨) 타일, 3D 건물(`LT_C_SPBD` 층수 extrude), 도로(`LT_L_MOCTLINK`)/하천(`LT_C_WKMSTRM`) 표시.
+- **CORS 제약**: 타일(WMTS)은 ACAO 있음, **Data API(벡터)는 없음** → HTML fetch 불가 → QML XMLHttpRequest로 우회(qgcBridge.requestVWorldLayer).
+- **geomFilter ≤ 10km²** 한계 → 스캔 박스 클램프.
+
+**3) 멀티 도로/강 발행** (`scripts/vworld_multi_search.py`)
+- bbox 안 feature를 **이름별 그룹핑** → 도로마다 LineSearchTask / 강마다 AreaSearchTask → 한 AutomationRequest로 UxAS 자동분배. `--names ALL` 또는 목록.
+- **고속도로→Cessna, 골목→X500** 자동: 별도 규칙 없이 `--register-from-config`(능력치) + 도로단위 task면 UxAS 비용최적화가 매칭.
+
+**4) 2D 지도 연동** (`src/FlyView/FlyViewMap.qml`, `EventBroadcaster` C++)
+- **2D 줌 수정**: Wayland+XWayland(xcb)에서 휠이 TouchPad로 보고돼 무시됨 → WheelHandler가 Mouse|TouchPad 모두 수용.
+- **3D 계획 → 2D 표시**: `EventBroadcaster.planOverlay`(공유 QVariant) → 3D에서 그린 area 폴리곤·선택 도로(주황)·강(파랑)이 2D 비행지도에도 렌더.
+
+**5) 올림픽대로 라이브 비행 검증** (헤드리스 성공)
+- 3D 패널 올림픽대로 선택 → UxAS 30-waypoint 경로 → bridge 자동 ARM→220m 이륙→200m서 활성 → AUTO.MISSION → 도로 고도 50m 하강 → 남쪽 7.2m/s 순회(wp0 도달, seq 진행) 확인.
+- **단, QGC(특히 3D WebEngine) 동시 실행 시 이 호스트에선 lockstep starvation→EKF 발산→flight termination.** 부하 규칙은 `[[feedback_host_load_lockstep]]` 메모리 참조. **고성능 호스트에선 QGC+멀티vehicle 동시 가능.**
+
+**6) Cesium 3D segfault / waypoint 미순회 / Cessna ARM** — 모두 이전(2026-06-07) 해결됨(아래 섹션).
+
+**다음 할 일**: 고성능 호스트에서 멀티 vehicle(X500+Cessna) 동시 비행으로 도로망 자동분배 시연 + (작업중) **카메라 풋프린트 커버리지 표시**.
+
+---
+
 ## ★★ 2026-06-06: 고성능 호스트로 이전 — 새 세션 시작 가이드
 
 이 호스트(load 높음, uptime 32일+)에서는 lockstep 센서 starvation 때문에 멀티 vehicle 동시 비행이 불가능했다. **더 강한 컴퓨터의 새 세션에서 이어서 진행**하기로 결정. 아래 순서대로 하면 된다.

@@ -281,6 +281,96 @@ FlightMap {
         }
     }
 
+    // ---------------------------------------------------------------
+    // Camera footprint + searched-coverage overlay
+    //   Live yellow footprint per flying vehicle (nadir camera quad sized by
+    //   altitude × FOV, oriented to heading) + accumulated green "searched"
+    //   stamps so the operator can confirm the whole area was covered.
+    // ---------------------------------------------------------------
+    property bool showCameraCoverage: true
+    property real camHFovDeg:         45      // sensor horizontal FOV (Wide)
+    property real camVFovDeg:         34      // ~4:3 vertical FOV
+    property var  _coverageStamps:    []      // accumulated footprints [[coord,...],...]
+    property var  _liveFootprints:    []      // current footprint per vehicle
+    property var  _lastStampCoord:    ({})    // vehicleId -> last stamped coordinate
+
+    function _camFootprint(lat, lon, altM, hdgDeg) {
+        if (altM < 2) return []
+        var hw = altM * Math.tan(camHFovDeg * Math.PI / 360)   // half cross-track (m)
+        var hl = altM * Math.tan(camVFovDeg * Math.PI / 360)   // half along-track (m)
+        var c = QtPositioning.coordinate(lat, lon)
+        function corner(fwd, right) {
+            var p = c
+            if (Math.abs(fwd) > 0.1)   p = p.atDistanceAndAzimuth(Math.abs(fwd),  fwd  >= 0 ? hdgDeg : hdgDeg + 180)
+            if (Math.abs(right) > 0.1) p = p.atDistanceAndAzimuth(Math.abs(right), right >= 0 ? hdgDeg + 90 : hdgDeg + 270)
+            return p
+        }
+        return [corner(hl, -hw), corner(hl, hw), corner(-hl, hw), corner(-hl, -hw)]
+    }
+
+    Timer {
+        interval: 350
+        running:  showCameraCoverage && !pipMode
+        repeat:   true
+        onTriggered: {
+            var live = []
+            var vlist = QGroundControl.multiVehicleManager.vehicles
+            for (var i = 0; i < vlist.count; i++) {
+                var v = vlist.get(i)
+                if (!v || !v.coordinate.isValid) continue
+                var alt = v.altitudeRelative.rawValue || 0
+                if (alt < 2) continue
+                var hdg = v.heading.rawValue || 0
+                var fp = _root._camFootprint(v.coordinate.latitude, v.coordinate.longitude, alt, hdg)
+                if (fp.length < 3) continue
+                live.push(fp)
+                // accumulate a coverage stamp once the vehicle moved ~half a
+                // footprint, so consecutive stamps overlap into a swept band.
+                var spacing = Math.max(5, alt * Math.tan(camVFovDeg * Math.PI / 360))
+                var last = _root._lastStampCoord[v.id]
+                if (!last || last.distanceTo(v.coordinate) > spacing) {
+                    _root._lastStampCoord[v.id] = v.coordinate
+                    var stamps = _root._coverageStamps
+                    stamps.push(fp)
+                    if (stamps.length > 1200) stamps.shift()
+                    _root._coverageStamps = stamps.slice()   // reassign → refresh view
+                }
+            }
+            _root._liveFootprints = live
+        }
+    }
+
+    function clearCoverage() { _root._coverageStamps = []; _root._lastStampCoord = ({}) }
+
+    // accumulated searched area (translucent green)
+    MapItemView {
+        model: _root._coverageStamps
+        delegate: MapPolygon {
+            z:            QGroundControl.zOrderMapItems - 1
+            visible:      !pipMode
+            color:        Qt.rgba(0.2, 0.9, 0.3, 0.18)
+            border.width: 0
+            path:         modelData
+        }
+    }
+    // live camera footprint per vehicle (yellow outline)
+    MapItemView {
+        model: _root._liveFootprints
+        delegate: MapPolygon {
+            z:            QGroundControl.zOrderMapItems
+            visible:      !pipMode
+            color:        Qt.rgba(1, 0.9, 0, 0.12)
+            border.color: "yellow"
+            border.width: 2
+            path:         modelData
+        }
+    }
+    // clear accumulated coverage when a vehicle's trajectory resets (new flight)
+    Connections {
+        target: _activeVehicle ? _activeVehicle.trajectoryPoints : null
+        function onPointsCleared() { _root.clearCoverage() }
+    }
+
     MapPolyline {
         id:         trajectoryPolyline
         line.width: 3
