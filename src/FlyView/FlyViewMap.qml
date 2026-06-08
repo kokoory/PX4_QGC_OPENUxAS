@@ -237,6 +237,50 @@ FlightMap {
     }
 
     // Add trajectory lines to the map
+    // ---------------------------------------------------------------
+    // UxAS plan overlay mirrored from the 3D Cesium view
+    // (EventBroadcaster.planOverlay = { area, roads, rivers } of [lat,lon]).
+    // Lets the operator see what was planned in 3D on this 2D map too.
+    // ---------------------------------------------------------------
+    property var _uxPlan: EventBroadcaster.planOverlay
+    function _uxPath(arr) {
+        var p = []
+        if (arr) for (var i = 0; i < arr.length; i++)
+            p.push(QtPositioning.coordinate(arr[i][0], arr[i][1]))
+        return p
+    }
+
+    MapPolygon {
+        id:          uxAreaOverlay
+        z:           QGroundControl.zOrderMapItems
+        visible:     !pipMode && path.length >= 3
+        color:       Qt.rgba(1, 1, 0, 0.15)
+        border.color:"yellow"
+        border.width:2
+        path:        _root._uxPlan && _root._uxPlan.area ? _root._uxPath(_root._uxPlan.area) : []
+    }
+    MapItemView {
+        model: (_root._uxPlan && _root._uxPlan.roads) ? _root._uxPlan.roads : []
+        delegate: MapPolyline {
+            z:          QGroundControl.zOrderMapItems
+            visible:    !pipMode
+            line.width: 4
+            line.color: "#ff9900"
+            path:       _root._uxPath(modelData)
+        }
+    }
+    MapItemView {
+        model: (_root._uxPlan && _root._uxPlan.rivers) ? _root._uxPlan.rivers : []
+        delegate: MapPolygon {
+            z:          QGroundControl.zOrderMapItems
+            visible:    !pipMode
+            color:      Qt.rgba(0.16, 0.5, 1, 0.3)
+            border.color:"#2a7fff"
+            border.width:2
+            path:       _root._uxPath(modelData)
+        }
+    }
+
     MapPolyline {
         id:         trajectoryPolyline
         line.width: 3

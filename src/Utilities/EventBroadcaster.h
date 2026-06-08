@@ -28,11 +28,21 @@ class EventBroadcaster : public QObject
     QML_ELEMENT
     QML_SINGLETON
 
+    /// Shared planning overlay (UxAS search geometry) so the 2D flight map can
+    /// draw what was planned in the 3D Cesium view. Shape (from QML/JS):
+    ///   { area: [[lat,lon],...],
+    ///     roads:  [ [[lat,lon],...], ... ],
+    ///     rivers: [ [[lat,lon],...], ... ] }
+    Q_PROPERTY(QVariant planOverlay READ planOverlay WRITE setPlanOverlay NOTIFY planOverlayChanged)
+
 public:
     explicit EventBroadcaster(QObject *parent = nullptr);
     ~EventBroadcaster();
 
     static EventBroadcaster *instance();
+
+    QVariant planOverlay() const { return _planOverlay; }
+    Q_INVOKABLE void setPlanOverlay(const QVariant &overlay);
 
     /// Send a UI event to all listeners
     /// @param category  Event category (e.g., "button", "view", "setting", "map", "mission")
@@ -53,6 +63,9 @@ public:
 signals:
     void eventSent(const QString &category, const QString &event);
 
+    /// Emitted when the shared planning overlay changes (3D -> 2D map)
+    void planOverlayChanged();
+
     /// Emitted when an external command is received via UDP
     /// @param action  The action string (e.g., "arm", "takeoff", "land")
     /// @param params  Additional parameters from the JSON command
@@ -65,6 +78,7 @@ private:
     void _broadcast(const QByteArray &data);
     void _bindReceiveSocket();
 
+    QVariant _planOverlay;
     static EventBroadcaster *_instance;
     QUdpSocket *_socket = nullptr;
     QUdpSocket *_receiveSocket = nullptr;

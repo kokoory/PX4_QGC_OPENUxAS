@@ -157,6 +157,14 @@ Item {
             }
             EventBroadcaster.sendEvent("uxas_search", kind, data)
         }
+
+        // Mirror the planned geometry to the 2D flight map. The page passes
+        // { area:[[lat,lon]...], roads:[[...]...], rivers:[[...]...] }.
+        function setPlanOverlay(overlayJson) {
+            var o = {}
+            try { o = JSON.parse(overlayJson) } catch (e) { o = {} }
+            EventBroadcaster.setPlanOverlay(o)
+        }
     }
 
     WebChannel {

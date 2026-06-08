@@ -132,3 +132,9 @@ void EventBroadcaster::_broadcast(const QByteArray &data)
     _socket->writeDatagram(data, QHostAddress::Broadcast, _broadcastPort);
     _socket->writeDatagram(data, QHostAddress::LocalHost, _broadcastPort);
 }
+
+void EventBroadcaster::setPlanOverlay(const QVariant &overlay)
+{
+    _planOverlay = overlay;
+    emit planOverlayChanged();
+}

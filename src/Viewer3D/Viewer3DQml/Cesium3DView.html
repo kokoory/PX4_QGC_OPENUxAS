@@ -872,6 +872,7 @@
             material: Cesium.Color.YELLOW.withAlpha(0.20),
             outline: true, outlineColor: Cesium.Color.YELLOW,
             classificationType: Cesium.ClassificationType.TERRAIN } });
+        _uxSyncOverlay();
         return poly;
     }
     function _uxPublishArea() {
@@ -1011,7 +1012,7 @@
                         classificationType: Cesium.ClassificationType.TERRAIN } }));
                 }
             });
-            featData[kind][nm] = { entity: ents, selected: false };
+            featData[kind][nm] = { entity: ents, selected: false, segs: groups[nm] };
             // checklist row
             var seg = groups[nm].length;
             var item = document.createElement("label"); item.className = "item";
@@ -1039,12 +1040,30 @@
         // sync the checkbox
         var cb = document.querySelector("input[data-kind='" + kind + "'][data-name='" + nm.replace(/'/g, "") + "']");
         if (cb) cb.checked = on;
+        _uxSyncOverlay();
     }
     function _uxSelectAll(kind, on) {
         Object.keys(featData[kind]).forEach(function (nm) { _uxSetSelected(kind, nm, on); });
     }
     function _uxSelectedNames(kind) {
         return Object.keys(featData[kind]).filter(function (nm) { return featData[kind][nm].selected; });
+    }
+
+    // Mirror the current plan (area polygon + selected roads/rivers) to the
+    // 2D flight map via EventBroadcaster.planOverlay.
+    function _uxSyncOverlay() {
+        if (!qgcBridge) return;
+        var o = { area: null, roads: [], rivers: [] };
+        if (uxTab === "area") o.area = _uxAreaPolygonLatLon();   // [[lat,lon]...]
+        ["road", "river"].forEach(function (kind) {
+            Object.keys(featData[kind]).forEach(function (nm) {
+                if (!featData[kind][nm].selected) return;
+                (featData[kind][nm].segs || []).forEach(function (seg) {
+                    o[kind + "s"].push(seg.map(function (c) { return [c[1], c[0]]; }));
+                });
+            });
+        });
+        qgcBridge.setPlanOverlay(JSON.stringify(o));
     }
     function _uxPublishFeatures(kind) {
         if (!qgcBridge || !scanBox) return;
@@ -1092,7 +1111,7 @@
         });
         var tabs = document.querySelectorAll("#uxasTabs .tab");
         tabs.forEach(function (el) { el.classList.toggle("active", el.getAttribute("data-tab") === t); });
-        if (t === "area") _uxPreviewArea();
+        if (t === "area") _uxPreviewArea(); else _uxSyncOverlay();
     }
 
     function _uxInitPanel() {

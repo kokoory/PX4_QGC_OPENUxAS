@@ -137,9 +137,11 @@ Map {
     WheelHandler {
         // workaround for QTBUG-87646 / QTBUG-112394 / QTBUG-112432:
         // Magic Mouse pretends to be a trackpad but doesn't work with PinchHandler
-        // and we don't yet distinguish mice and trackpads on Wayland either
-        acceptedDevices:    Qt.platform.pluginName === "cocoa" || Qt.platform.pluginName === "wayland" ?
-                                PointerDevice.Mouse | PointerDevice.TouchPad : PointerDevice.Mouse
+        // and we don't yet distinguish mice and trackpads on Wayland either.
+        // Accept both device classes: under XWayland (Wayland session + xcb
+        // plugin) wheel events are reported as TouchPad, so a Mouse-only filter
+        // silently drops scroll-zoom.
+        acceptedDevices:    PointerDevice.Mouse | PointerDevice.TouchPad
         rotationScale:      1 / 120
         property:           "zoomLevel"
 
