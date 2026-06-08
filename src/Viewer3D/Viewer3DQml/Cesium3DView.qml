@@ -141,13 +141,18 @@ Item {
                 "center_lon":    lon,
                 "vehicles":      p.vehicles || "1",
                 "altitude":      p.altitude || 100,
-                "region_radius": p.region_radius || 3000
+                "region_radius": p.region_radius || 3000,
+                "register_from_config": p.register_from_config || ""
             }
             if (kind === "area") {
+                // drawn polygon takes priority; else width×height rectangle
+                if (p.polygon !== undefined) data["polygon"] = p.polygon
                 data["width_m"]  = p.width_m || 1000
                 data["height_m"] = p.height_m || 1000
             } else {
-                data["half_size_m"] = p.half_size_m || 700
+                // road/river: selected names (or "ALL") + scan box half-size
+                data["names"]       = p.names || "ALL"
+                data["half_size_m"] = p.half_size_m || 1000
             }
             EventBroadcaster.sendEvent("uxas_search", kind, data)
         }

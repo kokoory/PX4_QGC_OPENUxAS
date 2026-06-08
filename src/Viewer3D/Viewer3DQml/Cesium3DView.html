@@ -54,33 +54,100 @@
         #uxasPanel .hint { color: #8aa; font-size: 11px; margin-top: 4px; }
         #uxasPanel.collapsed .body { display: none; }
         #uxasToggle { cursor: pointer; padding: 0 6px; }
+        /* tabs */
+        #uxasTabs { display: flex; margin: 0 0 6px 0; gap: 2px; }
+        #uxasTabs .tab { flex: 1; text-align: center; padding: 4px 0;
+            background: #1b2026; border: 1px solid #3a4150; border-radius: 3px;
+            cursor: pointer; color: #b8c0cc; }
+        #uxasTabs .tab.active { background: #2d4a6b; color: #fff; border-color: #3a5a82; }
+        .tabBody { display: none; } .tabBody.active { display: block; }
+        /* feature checklist */
+        #uxList { max-height: 150px; overflow-y: auto; margin: 4px 0;
+            border: 1px solid #3a4150; border-radius: 3px; padding: 3px; }
+        #uxList .item { display: flex; align-items: center; gap: 5px;
+            padding: 1px 2px; cursor: pointer; }
+        #uxList .item:hover { background: #222a33; }
+        #uxList .item input { width: auto; }
+        #uxList .item .cnt { color: #8aa; margin-left: auto; font-size: 11px; }
+        .miniBtns { display: flex; gap: 4px; }
+        .miniBtns button { width: auto; flex: 1; }
+        .veh { display: flex; gap: 6px; align-items: center; }
+        .veh input { width: 46px; }
     </style>
 </head>
 <body>
     <div id="cesiumContainer"></div>
 
     <div id="uxasPanel">
-        <h3>UxAS Area Search <span id="uxasToggle">–</span></h3>
+        <h3>UxAS Search Planner <span id="uxasToggle">–</span></h3>
         <div class="body">
-            <div class="row"><label>Width (m)</label>
-                <input id="uxW" type="number" value="2000" min="50" step="100"></div>
-            <div class="row"><label>Height (m)</label>
-                <input id="uxH" type="number" value="2000" min="50" step="100"></div>
+            <div id="uxasTabs">
+                <div class="tab active" data-tab="area">Area</div>
+                <div class="tab" data-tab="road">Road</div>
+                <div class="tab" data-tab="river">River</div>
+            </div>
+
+            <!-- shared: fleet + altitude -->
+            <div class="row"><label>X500</label>
+                <span class="veh"><input id="uxNX500" type="number" value="1" min="0" max="5">
+                <label>Cessna</label><input id="uxNCessna" type="number" value="0" min="0" max="1"></span></div>
+            <div class="row"><label>Vehicle IDs</label>
+                <input id="uxVeh" type="text" value="1"></div>
             <div class="row"><label>Altitude (m)</label>
                 <input id="uxAlt" type="number" value="150" min="20" step="10"></div>
-            <div class="row"><label>Sensor</label>
-                <select id="uxMode">
-                    <option value="wide">Wide (45°)</option>
-                    <option value="detail">Detail (20°)</option>
-                </select></div>
-            <div class="row"><label>Vehicles</label>
-                <input id="uxVeh" type="text" value="1"></div>
-            <div class="calc" id="uxCalc">–</div>
-            <button id="uxSetN">Set vehicles to need</button>
-            <button class="go" id="uxGoArea">Publish Area Search (view centre)</button>
-            <button id="uxGoRoad">Publish Road Search</button>
-            <button id="uxGoRiver">Publish River Search</button>
-            <div class="hint">Frames the area on the current view centre.</div>
+
+            <!-- AREA -->
+            <div class="tabBody active" id="tab-area">
+                <div class="row"><label>Shape</label>
+                    <select id="uxShape">
+                        <option value="rect">Rectangle</option>
+                        <option value="poly">Polygon (draw)</option>
+                    </select></div>
+                <div id="uxRectRows">
+                    <div class="row"><label>Width (m)</label>
+                        <input id="uxW" type="number" value="2000" min="50" step="100"></div>
+                    <div class="row"><label>Height (m)</label>
+                        <input id="uxH" type="number" value="2000" min="50" step="100"></div>
+                </div>
+                <div id="uxPolyRows" style="display:none">
+                    <div class="miniBtns">
+                        <button id="uxDraw">Draw: click map</button>
+                        <button id="uxPolyClear">Clear</button>
+                    </div>
+                    <div class="hint" id="uxPolyInfo">0 points</div>
+                </div>
+                <div class="row"><label>Sensor</label>
+                    <select id="uxMode">
+                        <option value="wide">Wide (45°)</option>
+                        <option value="detail">Detail (20°)</option>
+                    </select></div>
+                <div class="calc" id="uxCalc">–</div>
+                <button id="uxSetN">Set vehicles to need</button>
+                <button class="go" id="uxGoArea">Publish Area Search</button>
+                <div class="hint">Rectangle/polygon centred on the view; Preview before publish.</div>
+            </div>
+
+            <!-- ROAD / RIVER share the same list UI -->
+            <div class="tabBody" id="tab-road">
+                <button id="uxScanRoad">Scan area for roads</button>
+                <div class="miniBtns">
+                    <button id="uxRoadAll">Select all</button>
+                    <button id="uxRoadNone">Clear</button>
+                </div>
+                <div id="uxListRoadWrap"><div id="uxListRoad" class="uxFeatList"></div></div>
+                <div class="hint">Check names, or click roads on the map to toggle.</div>
+                <button class="go" id="uxGoRoad">Publish Road Search</button>
+            </div>
+            <div class="tabBody" id="tab-river">
+                <button id="uxScanRiver">Scan area for rivers</button>
+                <div class="miniBtns">
+                    <button id="uxRiverAll">Select all</button>
+                    <button id="uxRiverNone">Clear</button>
+                </div>
+                <div id="uxListRiverWrap"><div id="uxListRiver" class="uxFeatList"></div></div>
+                <div class="hint">Check names, or click rivers on the map to toggle.</div>
+                <button class="go" id="uxGoRiver">Publish River Search</button>
+            </div>
         </div>
     </div>
     <script>
@@ -693,31 +760,66 @@
     }
 
     // ===============================================================
-    // OpenUxAS area-search planning panel (in-page; renders over the globe)
+    // OpenUxAS search planner (in-page; renders over the globe)
+    //   Tabs Area / Road / River; mixed X500+Cessna fleet; polygon draw;
+    //   road/river scan -> name checklist + map-click select + preview.
     // ===============================================================
+    var X500_IDS = [1, 2, 3, 8, 9];     // multicopter pool (vehicles.json)
+    var CESSNA_IDS = [4];               // fixed-wing pool
+    var uxTab = "area";
+
+    // Area preview + drawn polygon
     var areaPreviewEntity = null;
+    var drawnPoly = [];                 // [[lon,lat], ...]
+    var drawnPolyEntity = null;
+    var drawing = false;
+
+    // Scanned road/river features: name -> {pts:[[lat,lon]...], entity, selected}
+    var featData = { road: {}, river: {} };
+    var scanBox = null;                 // {clat, clon, half} of the last scan
 
     function _uxEl(id) { return document.getElementById(id); }
 
-    // One X500 sortie coverage model — mirrors the planning calc.
+    // ---- fleet -----------------------------------------------------
+    function _uxVehicleIds() {
+        var nx = Math.min(X500_IDS.length, Math.max(0, parseInt(_uxEl("uxNX500").value) || 0));
+        var nc = Math.min(CESSNA_IDS.length, Math.max(0, parseInt(_uxEl("uxNCessna").value) || 0));
+        var ids = X500_IDS.slice(0, nx).concat(CESSNA_IDS.slice(0, nc));
+        return ids;
+    }
+    function _uxSyncVehicles() {
+        var ids = _uxVehicleIds();
+        _uxEl("uxVeh").value = ids.join(",") || "1";
+    }
+
+    // ---- coverage (Area tab) ---------------------------------------
     function _uxCoverage() {
-        var w = parseFloat(_uxEl("uxW").value) || 0;
-        var h = parseFloat(_uxEl("uxH").value) || 0;
         var alt = parseFloat(_uxEl("uxAlt").value) || 100;
         var detail = _uxEl("uxMode").value === "detail";
         var hfov = detail ? 20 : 45, overlap = detail ? 0.25 : 0.20;
         var speed = detail ? 10 : 12, eff = 0.75, onSta = 22 * 60;
         var swath = 2 * alt * Math.tan(hfov * Math.PI / 360);
-        var perDrone = swath * (1 - overlap) * speed * eff * onSta;   // m²
-        var area = w * h;
-        return {
-            areaKm2: area / 1e6, gsdCm: (swath / 1024) * 100,
-            perDroneKm2: perDrone / 1e6,
-            drones: Math.max(1, Math.ceil(area / Math.max(1, perDrone))),
-            w: w, h: h, alt: alt
-        };
+        var perDrone = swath * (1 - overlap) * speed * eff * onSta;
+        var area = _uxAreaM2();
+        return { areaKm2: area / 1e6, gsdCm: (swath / 1024) * 100,
+                 perDroneKm2: perDrone / 1e6,
+                 drones: Math.max(1, Math.ceil(area / Math.max(1, perDrone))) };
     }
-
+    function _uxAreaM2() {
+        if (_uxEl("uxShape").value === "poly" && drawnPoly.length >= 3) {
+            // shoelace in metres (approx)
+            var lat0 = drawnPoly[0][1];
+            var mPerLon = 111320 * Math.cos(lat0 * Math.PI / 180), mPerLat = 111320;
+            var s = 0;
+            for (var i = 0; i < drawnPoly.length; i++) {
+                var a = drawnPoly[i], b = drawnPoly[(i + 1) % drawnPoly.length];
+                s += (a[0] * mPerLon) * (b[1] * mPerLat) - (b[0] * mPerLon) * (a[1] * mPerLat);
+            }
+            return Math.abs(s) / 2;
+        }
+        var w = parseFloat(_uxEl("uxW").value) || 0, h = parseFloat(_uxEl("uxH").value) || 0;
+        return w * h;
+    }
     function _uxRefreshCalc() {
         var c = _uxCoverage();
         _uxEl("uxCalc").innerHTML =
@@ -727,92 +829,283 @@
         _uxEl("uxSetN").textContent = "Set vehicles to " + c.drones;
     }
 
-    // Ground point at the centre of the screen (what the camera looks at).
+    // ---- geometry helpers ------------------------------------------
     function _uxViewCentre() {
         if (!viewer) return null;
         var cv = viewer.scene.canvas;
         var px = new Cesium.Cartesian2(cv.clientWidth / 2, cv.clientHeight / 2);
         var ray = viewer.camera.getPickRay(px);
         var hit = ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
-        var carto = hit ? Cesium.Cartographic.fromCartesian(hit)
-                        : viewer.camera.positionCartographic;
-        return { lat: Cesium.Math.toDegrees(carto.latitude),
-                 lon: Cesium.Math.toDegrees(carto.longitude) };
+        var carto = hit ? Cesium.Cartographic.fromCartesian(hit) : viewer.camera.positionCartographic;
+        return { lat: Cesium.Math.toDegrees(carto.latitude), lon: Cesium.Math.toDegrees(carto.longitude) };
+    }
+    function _uxRectCorners(lat, lon, w, h) {
+        var dLat = (h / 2) / 111320.0, dLon = (w / 2) / (111320.0 * Math.cos(lat * Math.PI / 180));
+        return [[lat - dLat, lon - dLon], [lat - dLat, lon + dLon],
+                [lat + dLat, lon + dLon], [lat + dLat, lon - dLon]];
     }
 
-    function _uxDrawAreaPreview(lat, lon, w, h) {
-        if (!viewer) return;
+    // ---- AREA preview + publish ------------------------------------
+    function _uxClearAreaPreview() {
         if (areaPreviewEntity) { viewer.entities.remove(areaPreviewEntity); areaPreviewEntity = null; }
-        var dLat = (h / 2) / 111320.0;
-        var dLon = (w / 2) / (111320.0 * Math.cos(lat * Math.PI / 180));
-        areaPreviewEntity = viewer.entities.add({
-            polygon: {
-                hierarchy: Cesium.Cartesian3.fromDegreesArray([
-                    lon - dLon, lat - dLat,  lon + dLon, lat - dLat,
-                    lon + dLon, lat + dLat,  lon - dLon, lat + dLat]),
-                material: Cesium.Color.YELLOW.withAlpha(0.18),
-                outline: true, outlineColor: Cesium.Color.YELLOW,
-                classificationType: Cesium.ClassificationType.TERRAIN,
-            },
-        });
+    }
+    function _uxAreaPolygonLatLon() {
+        if (_uxEl("uxShape").value === "poly") {
+            if (drawnPoly.length < 3) return null;
+            return drawnPoly.map(function (c) { return [c[1], c[0]]; });   // [lat,lon]
+        }
+        var c = _uxViewCentre(); if (!c) return null;
+        var w = parseFloat(_uxEl("uxW").value) || 1000, h = parseFloat(_uxEl("uxH").value) || 1000;
+        return _uxRectCorners(c.lat, c.lon, w, h);
+    }
+    function _uxPreviewArea() {
+        var poly = _uxAreaPolygonLatLon(); if (!poly) return;
+        _uxClearAreaPreview();
+        var flat = []; poly.forEach(function (p) { flat.push(p[1], p[0]); });
+        areaPreviewEntity = viewer.entities.add({ polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(flat),
+            material: Cesium.Color.YELLOW.withAlpha(0.20),
+            outline: true, outlineColor: Cesium.Color.YELLOW,
+            classificationType: Cesium.ClassificationType.TERRAIN } });
+        return poly;
+    }
+    function _uxPublishArea() {
+        if (!qgcBridge) return;
+        var poly = _uxPreviewArea(); if (!poly) { return; }
+        // centre = polygon centroid (just for the operating region)
+        var clat = 0, clon = 0; poly.forEach(function (p) { clat += p[0]; clon += p[1]; });
+        clat /= poly.length; clon /= poly.length;
+        qgcBridge.publishSearch("area", clat, clon, JSON.stringify({
+            polygon: poly, vehicles: _uxEl("uxVeh").value || "1",
+            altitude: parseFloat(_uxEl("uxAlt").value) || 100,
+            region_radius: 4000 }));
     }
 
-    function _uxPublish(kind) {
+    // ---- polygon drawing -------------------------------------------
+    function _uxRedrawDrawnPoly() {
+        if (drawnPolyEntity) { viewer.entities.remove(drawnPolyEntity); drawnPolyEntity = null; }
+        _uxEl("uxPolyInfo").textContent = drawnPoly.length + " points";
+        if (drawnPoly.length < 1) return;
+        var flat = []; drawnPoly.forEach(function (c) { flat.push(c[0], c[1]); });
+        drawnPolyEntity = viewer.entities.add(drawnPoly.length >= 3 ? { polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(flat),
+            material: Cesium.Color.CYAN.withAlpha(0.18),
+            outline: true, outlineColor: Cesium.Color.CYAN,
+            classificationType: Cesium.ClassificationType.TERRAIN } }
+          : { polyline: { positions: Cesium.Cartesian3.fromDegreesArray(flat),
+            width: 2, material: Cesium.Color.CYAN, clampToGround: true } });
+        _uxRefreshCalc();
+    }
+
+    // ---- ROAD/RIVER scan, checklist, map-select --------------------
+    function _uxScan(kind) {
         if (!qgcBridge) return;
-        var c = _uxViewCentre();
-        if (!c) return;
-        var cov = _uxCoverage();
-        var params = {
+        var c = _uxViewCentre(); if (!c) return;
+        var half = 1000;                                  // ~2 km box (<10 km²)
+        scanBox = { clat: c.lat, clon: c.lon, half: half };
+        var dLat = half / 111320, dLon = half / (111320 * Math.cos(c.lat * Math.PI / 180));
+        var w = c.lon - dLon, e = c.lon + dLon, s = c.lat - dLat, n = c.lat + dLat;
+        var layer = (kind === "road") ? "LT_L_MOCTLINK" : "LT_C_WKMSTRM";
+        var cb = (kind === "road") ? "renderRoadScan" : "renderRiverScan";
+        qgcBridge.requestVWorldLayer(layer, w, s, e, n, cb);
+    }
+    function _uxClipLine(ln, b) {   // b = {w,s,e,n}
+        return ln.filter(function (c) { return c[0] >= b.w && c[0] <= b.e && c[1] >= b.s && c[1] <= b.n; });
+    }
+    function _uxGroupFeatures(kind, featuresJson) {
+        var feats; try { feats = JSON.parse(featuresJson); } catch (e) { feats = []; }
+        var b = null;
+        if (scanBox) {
+            var dLat = scanBox.half / 111320, dLon = scanBox.half / (111320 * Math.cos(scanBox.clat * Math.PI / 180));
+            b = { w: scanBox.clon - dLon, e: scanBox.clon + dLon, s: scanBox.clat - dLat, n: scanBox.clat + dLat };
+        }
+        var groups = {};   // name -> [ [lon,lat]... ] merged points (for preview)
+        feats.forEach(function (f) {
+            var nm = ((kind === "road" ? f.properties.road_name : f.properties.riv_nm) || "").trim();
+            if (!nm) return;
+            var g = f.geometry;
+            if (kind === "road") {
+                var lines = (g.type === "MultiLineString") ? g.coordinates
+                          : (g.type === "LineString") ? [g.coordinates] : [];
+                lines.forEach(function (ln) {
+                    var cl = b ? _uxClipLine(ln, b) : ln;
+                    if (cl.length >= 2) (groups[nm] = groups[nm] || []).push(cl);
+                });
+            } else {
+                var polys = (g.type === "MultiPolygon") ? g.coordinates
+                          : (g.type === "Polygon") ? [g.coordinates] : [];
+                polys.forEach(function (p) { (groups[nm] = groups[nm] || []).push(p[0]); });
+            }
+        });
+        return groups;
+    }
+    function _uxRenderScan(kind, featuresJson) {
+        var groups = _uxGroupFeatures(kind, featuresJson);
+        // clear previous feature entities of this kind
+        Object.keys(featData[kind]).forEach(function (nm) {
+            var e = featData[kind][nm].entity;
+            if (e) e.forEach(function (x) { viewer.entities.remove(x); });
+        });
+        featData[kind] = {};
+        var listEl = _uxEl(kind === "road" ? "uxListRoad" : "uxListRiver");
+        listEl.innerHTML = "";
+        var names = Object.keys(groups).sort();
+        names.forEach(function (nm) {
+            var ents = [];
+            var color = (kind === "road") ? Cesium.Color.ORANGE : Cesium.Color.DODGERBLUE;
+            groups[nm].forEach(function (seg) {
+                var flat = []; seg.forEach(function (c) { flat.push(c[0], c[1]); });
+                if (kind === "road") {
+                    ents.push(viewer.entities.add({ name: kind + ":" + nm, polyline: {
+                        positions: Cesium.Cartesian3.fromDegreesArray(flat), width: 4,
+                        material: color.withAlpha(0.55), clampToGround: true } }));
+                } else {
+                    ents.push(viewer.entities.add({ name: kind + ":" + nm, polygon: {
+                        hierarchy: Cesium.Cartesian3.fromDegreesArray(flat),
+                        material: color.withAlpha(0.30),
+                        classificationType: Cesium.ClassificationType.TERRAIN } }));
+                }
+            });
+            featData[kind][nm] = { entity: ents, selected: false };
+            // checklist row
+            var seg = groups[nm].length;
+            var item = document.createElement("label"); item.className = "item";
+            item.innerHTML = "<input type='checkbox' data-kind='" + kind + "' data-name='"
+                + nm.replace(/'/g, "") + "'> <span>" + nm + "</span><span class='cnt'>" + seg + "</span>";
+            listEl.appendChild(item);
+            item.querySelector("input").addEventListener("change", function (ev) {
+                _uxSetSelected(kind, nm, ev.target.checked);
+            });
+        });
+        if (!names.length) listEl.innerHTML = "<div class='hint'>none found in view</div>";
+    }
+    function renderRoadScan(j) { _uxRenderScan("road", j); }
+    function renderRiverScan(j) { _uxRenderScan("river", j); }
+
+    function _uxSetSelected(kind, nm, on) {
+        var f = featData[kind][nm]; if (!f) return;
+        f.selected = on;
+        var base = (kind === "road") ? Cesium.Color.ORANGE : Cesium.Color.DODGERBLUE;
+        var col = on ? Cesium.Color.LIME : base;
+        f.entity.forEach(function (e) {
+            if (e.polyline) e.polyline.material = col.withAlpha(on ? 0.95 : 0.55);
+            if (e.polygon) e.polygon.material = col.withAlpha(on ? 0.45 : 0.30);
+        });
+        // sync the checkbox
+        var cb = document.querySelector("input[data-kind='" + kind + "'][data-name='" + nm.replace(/'/g, "") + "']");
+        if (cb) cb.checked = on;
+    }
+    function _uxSelectAll(kind, on) {
+        Object.keys(featData[kind]).forEach(function (nm) { _uxSetSelected(kind, nm, on); });
+    }
+    function _uxSelectedNames(kind) {
+        return Object.keys(featData[kind]).filter(function (nm) { return featData[kind][nm].selected; });
+    }
+    function _uxPublishFeatures(kind) {
+        if (!qgcBridge || !scanBox) return;
+        var sel = _uxSelectedNames(kind);
+        var names = sel.length ? sel.join(",") : "ALL";
+        qgcBridge.publishSearch(kind, scanBox.clat, scanBox.clon, JSON.stringify({
+            names: names, half_size_m: scanBox.half,
             vehicles: _uxEl("uxVeh").value || "1",
-            altitude: cov.alt,
-            region_radius: Math.max(2000, Math.max(cov.w, cov.h)),
-        };
-        if (kind === "area") { params.width_m = cov.w; params.height_m = cov.h;
-            _uxDrawAreaPreview(c.lat, c.lon, cov.w, cov.h); }
-        else { params.half_size_m = Math.min(900, Math.max(cov.w, cov.h) / 2); }
-        qgcBridge.publishSearch(kind, c.lat, c.lon, JSON.stringify(params));
+            altitude: parseFloat(_uxEl("uxAlt").value) || 120,
+            region_radius: Math.max(3000, scanBox.half * 2) }));
+    }
+
+    // map left-click: toggle the road/river under the cursor (by name)
+    function _uxInstallMapPick() {
+        if (!viewer) return;
+        viewer.screenSpaceEventHandler.setInputAction(function (click) {
+            if (drawing) {   // polygon drawing mode consumes the click
+                var ray = viewer.camera.getPickRay(click.position);
+                var cart = ray ? viewer.scene.globe.pick(ray, viewer.scene) : null;
+                if (cart) {
+                    var ca = Cesium.Cartographic.fromCartesian(cart);
+                    drawnPoly.push([Cesium.Math.toDegrees(ca.longitude), Cesium.Math.toDegrees(ca.latitude)]);
+                    _uxRedrawDrawnPoly();
+                }
+                return;
+            }
+            var picked = viewer.scene.pick(click.position);
+            if (picked && picked.id && picked.id.name && picked.id.name.indexOf(":") > 0) {
+                var parts = picked.id.name.split(":");
+                var kind = parts[0], nm = parts.slice(1).join(":");
+                if (featData[kind] && featData[kind][nm])
+                    _uxSetSelected(kind, nm, !featData[kind][nm].selected);
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    }
+
+    // ---- panel wiring ----------------------------------------------
+    function _uxSwitchTab(t) {
+        uxTab = t;
+        ["area", "road", "river"].forEach(function (k) {
+            _uxEl("tab-" + k).classList.toggle("active", k === t);
+        });
+        var tabs = document.querySelectorAll("#uxasTabs .tab");
+        tabs.forEach(function (el) { el.classList.toggle("active", el.getAttribute("data-tab") === t); });
+        if (t === "area") _uxPreviewArea();
     }
 
     function _uxInitPanel() {
-        ["uxW", "uxH", "uxAlt", "uxMode", "uxVeh"].forEach(function (id) {
-            _uxEl(id).addEventListener("input", _uxRefreshCalc);
+        ["uxNX500", "uxNCessna"].forEach(function (id) {
+            _uxEl(id).addEventListener("input", _uxSyncVehicles);
+        });
+        ["uxAlt", "uxMode", "uxW", "uxH"].forEach(function (id) {
+            _uxEl(id).addEventListener("input", function () { _uxRefreshCalc(); if (uxTab === "area") _uxPreviewArea(); });
+        });
+        _uxEl("uxShape").addEventListener("change", function () {
+            var poly = _uxEl("uxShape").value === "poly";
+            _uxEl("uxRectRows").style.display = poly ? "none" : "block";
+            _uxEl("uxPolyRows").style.display = poly ? "block" : "none";
+            _uxRefreshCalc(); _uxPreviewArea();
+        });
+        _uxEl("uxDraw").addEventListener("click", function () {
+            drawing = !drawing;
+            _uxEl("uxDraw").textContent = drawing ? "Drawing… (click Finish)" : "Draw: click map";
+            if (!drawing) { _uxClearAreaPreview(); _uxPreviewArea(); }
+        });
+        _uxEl("uxPolyClear").addEventListener("click", function () {
+            drawnPoly = []; _uxRedrawDrawnPoly(); _uxClearAreaPreview();
         });
         _uxEl("uxSetN").addEventListener("click", function () {
-            var n = _uxCoverage().drones, ids = [];
-            for (var i = 1; i <= n; i++) ids.push(i);
-            _uxEl("uxVeh").value = ids.join(",");
+            var n = _uxCoverage().drones; _uxEl("uxNX500").value = Math.min(X500_IDS.length, n); _uxSyncVehicles();
         });
-        _uxEl("uxGoArea").addEventListener("click", function () { _uxPublish("area"); });
-        _uxEl("uxGoRoad").addEventListener("click", function () { _uxPublish("road"); });
-        _uxEl("uxGoRiver").addEventListener("click", function () { _uxPublish("river"); });
+        _uxEl("uxGoArea").addEventListener("click", function () { _uxPublishArea(); });
+        _uxEl("uxScanRoad").addEventListener("click", function () { _uxScan("road"); });
+        _uxEl("uxScanRiver").addEventListener("click", function () { _uxScan("river"); });
+        _uxEl("uxRoadAll").addEventListener("click", function () { _uxSelectAll("road", true); });
+        _uxEl("uxRoadNone").addEventListener("click", function () { _uxSelectAll("road", false); });
+        _uxEl("uxRiverAll").addEventListener("click", function () { _uxSelectAll("river", true); });
+        _uxEl("uxRiverNone").addEventListener("click", function () { _uxSelectAll("river", false); });
+        _uxEl("uxGoRoad").addEventListener("click", function () { _uxPublishFeatures("road"); });
+        _uxEl("uxGoRiver").addEventListener("click", function () { _uxPublishFeatures("river"); });
+        document.querySelectorAll("#uxasTabs .tab").forEach(function (el) {
+            el.addEventListener("click", function () { _uxSwitchTab(el.getAttribute("data-tab")); });
+        });
         _uxEl("uxasToggle").addEventListener("click", function (ev) {
             ev.stopPropagation();
             var p = _uxEl("uxasPanel"); p.classList.toggle("collapsed");
             _uxEl("uxasToggle").textContent = p.classList.contains("collapsed") ? "+" : "–";
         });
         _uxMakeDraggable();
+        _uxInstallMapPick();
+        _uxSyncVehicles();
         _uxRefreshCalc();
     }
 
-    // Drag the panel by its header so it can be moved off the top edge.
     function _uxMakeDraggable() {
-        var panel = _uxEl("uxasPanel");
-        var header = panel.querySelector("h3");
+        var panel = _uxEl("uxasPanel"), header = panel.querySelector("h3");
         var dragging = false, ox = 0, oy = 0;
         header.addEventListener("mousedown", function (ev) {
             dragging = true;
-            var r = panel.getBoundingClientRect();
-            ox = ev.clientX - r.left;
-            oy = ev.clientY - r.top;
-            panel.style.right = "auto";          // switch to left/top positioning
-            ev.preventDefault();
+            var r = panel.getBoundingClientRect(); ox = ev.clientX - r.left; oy = ev.clientY - r.top;
+            panel.style.right = "auto"; ev.preventDefault();
         });
         window.addEventListener("mousemove", function (ev) {
             if (!dragging) return;
-            var x = Math.max(0, Math.min(window.innerWidth - 40, ev.clientX - ox));
-            var y = Math.max(0, Math.min(window.innerHeight - 20, ev.clientY - oy));
-            panel.style.left = x + "px";
-            panel.style.top = y + "px";
+            panel.style.left = Math.max(0, Math.min(window.innerWidth - 40, ev.clientX - ox)) + "px";
+            panel.style.top = Math.max(0, Math.min(window.innerHeight - 20, ev.clientY - oy)) + "px";
         });
         window.addEventListener("mouseup", function () { dragging = false; });
     }
