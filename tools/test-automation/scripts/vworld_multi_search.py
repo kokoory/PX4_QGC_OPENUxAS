@@ -193,19 +193,23 @@ def main(argv=None) -> int:
     print(f"[multi] AutomationRequest {args.request_id}: "
           f"{len(task_ids)} tasks -> vehicles {vehicle_ids} (UxAS auto-assigns)")
 
-    deadline = time.time() + args.wait_secs
-    got = 0
-    while time.time() < deadline:
-        msg = ux.receive(timeout_ms=500)
-        if msg is None:
-            continue
-        env, obj = msg
+    # Listen for UxAS's response via the callback interface (no blocking recv).
+    import threading as _th
+    done = _th.Event()
+
+    def _on_msg(env, obj):
         cls = type(obj).__name__ if obj is not None else "raw"
         if cls in ("AutomationResponse", "MissionCommand"):
-            got += 1
             print(f"  <- {cls}")
             if cls == "AutomationResponse":
-                break
+                done.set()
+    ux.on_message(_on_msg)
+
+    done.wait(timeout=args.wait_secs)
+    if not done.is_set():
+        print("[multi] no AutomationResponse within "
+              f"{args.wait_secs:.0f}s (is UxAS running on "
+              f"{args.uxas_pub} / {args.uxas_pull}?)")
     ux.stop()
     return 0
 
