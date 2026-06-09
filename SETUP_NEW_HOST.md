@@ -4,6 +4,57 @@
 > 전체 컨텍스트/미해결 이슈/재시작 시퀀스: [`tools/test-automation/docs/SESSION_HANDOFF.md`](tools/test-automation/docs/SESSION_HANDOFF.md)
 > 상세 매뉴얼: [`tools/test-automation/docs/QGC_TestAutomation_Manual.md`](tools/test-automation/docs/QGC_TestAutomation_Manual.md)
 
+---
+
+## ★ 고성능 호스트 빠른 이어가기 (2026-06-09 기준)
+
+**구 호스트에서 무엇이 막혔나:** lockstep real-time을 못 따라가 SIM_SPEED 0.5가 한계였고,
+QGC(특히 Cesium 3D WebEngine ~54% CPU) + 비행 동시 실행 시 센서 starvation → EKF 발산 →
+flight termination. **고성능 호스트에선 이게 다 풀림** → SIM_SPEED 1.0, QGC+3D 동시, 멀티 vehicle.
+
+**0) 3개 repo 클론 (복붙 한 방):**
+```bash
+cd ~
+git clone -b Add3Dmap https://github.com/kokoory/PX4_QGC_OPENUxAS.git && \
+  ( cd PX4_QGC_OPENUxAS && git submodule update --init --recursive )
+git clone -b claude/knowledge-distillation-flight-fGsy1 --recursive https://github.com/kokoory/PX4-Autopilot.git
+git clone -b develop https://github.com/kokoory/OpenUxAS.git
+```
+
+**1) 빌드** — §2(PX4: `ubuntu.sh` + x500 패치 + `make px4_sitl_default`), §3(OpenUxAS: `./anod build uxas`),
+§4(QGC: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel`).
+
+**2) VWorld 키** (3D 위성/도로/강/건물 + 2D VWorld 지도용):
+`Settings → General → VWorld`에 입력하거나 `~/.config/QGroundControl*/QGroundControl*.ini` `[General]`에
+`vworldToken=4AB82F93-D134-3AFB-AEA8-59CB23854556`.
+
+**3) 실행 — 멀티 vehicle 도로/영역 탐색 (고성능 호스트는 SIM_SPEED 생략=1.0, GUI 켜도 됨):**
+```bash
+# 셸1 UxAS
+cd ~/OpenUxAS && (cp <repo>/tools/test-automation/configs/uxas_multi.xml /tmp/cfg.xml; \
+  obj/cpp/uxas -cfgPath /tmp/cfg.xml -runUntil 999999)
+# 셸2 SITL (X500 2~3대 + Cessna 1대 동시 — 고성능 호스트만 가능). RECORDER=0 필수.
+cd ~/PX4_QGC_OPENUxAS/tools/test-automation
+RECORDER=0 ./scripts/launch_all.sh --ids 1,2,4 --home-lat 37.5125 --home-lon 127.000
+# 셸3 Bridges (자동 ARM→이륙→200m서 임무 활성)
+./scripts/launch_bridges.sh --ids 1,2,4
+# 셸4 QGC (3D 패널로 계획) — 고성능 호스트는 3D 켜도 OK
+~/PX4_QGC_OPENUxAS/build/Release/QGroundControl &
+# 셸5 임무계획 리스너 (3D 패널 Publish를 받아 UxAS 발행)
+VWORLD_KEY=4AB82F93-D134-3AFB-AEA8-59CB23854556 python3 scripts/uxas_search_listener.py
+```
+그다음 **QGC 3D 뷰**(좌측 Cesium 3D 버튼) → Road 탭 → "Scan area" → 도로 선택(체크/클릭/전체) →
+Publish Road Search → UxAS가 X500·Cessna에 자동 배정 → 자율비행. 2D 지도에서 **카메라 풋프린트(노랑)
++ 커버리지(초록)** 로 탐색 진척 확인. (CLI로 직접: `python3 scripts/vworld_multi_search.py road
+--vehicles 1,2,4 --names ALL --bbox <min_lat,min_lon,max_lat,max_lon> --register-from-config ../configs/vehicles.json`)
+
+**핵심 검증 포인트 (구 호스트에서 못 본 것):** ① 부드러운 실시간 비행, ② 멀티 vehicle 동시 +
+도로망 자동분배(긴 고속도로→Cessna, 골목→X500), ③ 풋프린트 커버리지가 도로/영역 따라 채워지는 것.
+
+상세 단계·함정은 아래 §0~§8.
+
+---
+
 ## 0. 시스템 요구사항
 
 - [ ] Ubuntu 22.04/24.04 (또는 호환 Linux)
