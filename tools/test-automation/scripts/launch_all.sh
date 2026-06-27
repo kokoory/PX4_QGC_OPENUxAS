@@ -152,6 +152,16 @@ check_prereq() {
     [[ -f "${PX4_BUILD_DIR}/bin/px4" ]] || { err "PX4 binary missing: ${PX4_BUILD_DIR}/bin/px4 — build with 'make px4_sitl_default' in ${PX4_DIR}"; exit 1; }
     [[ -f "${VEHICLES_JSON}" ]]         || { err "vehicles.json missing: ${VEHICLES_JSON}"; exit 1; }
     command -v gz >/dev/null || warn "Gazebo 'gz' not in PATH — some models may not start"
+
+    # PX4 SITL persists missions/geofence/safe-points in dataman across reboots
+    # (PX4_BUILD_DIR/dataman). If a previous flight crashed with a corrupted
+    # waypoint (e.g. 21 km altitude from an EKF blowup), PX4 will replay it on
+    # the next AUTO.* transition and the takeoff appears to "fly the leftover
+    # mission" instead of climbing to the requested altitude. Reset it.
+    if [[ -f "${PX4_BUILD_DIR}/dataman" ]]; then
+        log "Clearing PX4 dataman (removes leftover mission/geofence/safe-points)"
+        rm -f "${PX4_BUILD_DIR}/dataman"
+    fi
 }
 
 start_px4() {
@@ -170,6 +180,14 @@ start_px4() {
     # than wall-clock so each lockstep step has more CPU budget.
     # SIM_SPEED env (default 1.0). Set e.g. 0.5 to halve sim speed.
     env_vars="${env_vars} PX4_SIM_SPEED_FACTOR=${SIM_SPEED:-1.0}"
+    # PX4-RC starts `gz sim -g` (the GUI client) by default; HEADLESS=1 skips
+    # it. On hosts whose Xorg has no nvidia_drv (Mesa falls back to llvmpipe
+    # CPU rendering), the GUI eats 8+ cores and starves the gz lockstep
+    # scheduler → EKF blows up → vehicle climbs uncontrollably. Default on,
+    # set GZ_GUI=1 to force the GUI back.
+    if [[ "${GZ_GUI:-0}" != "1" ]]; then
+        env_vars="${env_vars} HEADLESS=1"
+    fi
     if [[ -n "${HOME_LAT}" ]]; then env_vars="${env_vars} PX4_HOME_LAT=${HOME_LAT}"; fi
     if [[ -n "${HOME_LON}" ]]; then env_vars="${env_vars} PX4_HOME_LON=${HOME_LON}"; fi
     if [[ -n "${HOME_ALT}" ]]; then env_vars="${env_vars} PX4_HOME_ALT=${HOME_ALT}"; fi

@@ -97,7 +97,16 @@ def _capabilities_for(vehicle: dict, lmcp_defaults: dict) -> dict:
 
 
 def register_vehicles_from_config(ux: UxASInterface, cfg_path: Path,
-                                  vehicle_ids: list[int]) -> dict[int, str]:
+                                  vehicle_ids: list[int],
+                                  altitude: float | None = None) -> dict[int, str]:
+    """Register each vehicle's EntityConfiguration (capabilities) with UxAS.
+
+    When ``altitude`` is given (the operator's requested search altitude), it
+    overrides each vehicle's NominalAltitude (clamped to its [min_alt,max_alt]
+    band). UxAS's route planner emits waypoints at NominalAltitude, so this is
+    what actually makes the panel's Alt field control the flown altitude — the
+    search-task altitude alone is ignored by the planner.
+    """
     data = json.load(open(cfg_path))
     vehicles = {v["id"]: v for v in data["vehicles"]}
     defaults = data.get("lmcp_defaults", {})
@@ -108,11 +117,14 @@ def register_vehicles_from_config(ux: UxASInterface, cfg_path: Path,
             continue
         v = vehicles[vid]
         cap = _capabilities_for(v, defaults)
+        nominal_alt = cap["nominal_alt"]
+        if altitude is not None:
+            nominal_alt = max(cap["min_alt"], min(cap["max_alt"], float(altitude)))
         avc = build_air_vehicle_configuration(
             vehicle_id=vid, label=v["name"],
             min_speed=cap["min_speed"], max_speed=cap["max_speed"],
             nominal_speed=cap["nominal_speed"],
-            nominal_altitude=cap["nominal_alt"],
+            nominal_altitude=nominal_alt,
             max_climb=cap["max_climb"],
             min_alt=cap["min_alt"], max_alt=cap["max_alt"],
             max_bank_deg=cap["max_bank_deg"],
@@ -121,7 +133,8 @@ def register_vehicles_from_config(ux: UxASInterface, cfg_path: Path,
         labels[vid] = f"{v['name']} ({v['type']})"
         print(f"  registered v{vid:<2d} {v['name']:22s} {v['type']:11s} "
               f"speed=[{cap['min_speed']:.0f},{cap['max_speed']:.0f}] m/s  "
-              f"alt=[{cap['min_alt']:.0f},{cap['max_alt']:.0f}] m")
+              f"alt=[{cap['min_alt']:.0f},{cap['max_alt']:.0f}] m  "
+              f"nominal_alt={nominal_alt:.0f} m")
     return labels
 
 
@@ -238,7 +251,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not cfg_path.is_absolute():
             cfg_path = SCRIPT_DIR / cfg_path
         print(f"--- Registering {len(vehicle_ids)} vehicle(s) from {cfg_path} ---")
-        register_vehicles_from_config(ux, cfg_path, vehicle_ids)
+        register_vehicles_from_config(ux, cfg_path, vehicle_ids,
+                                      altitude=args.altitude)
         time.sleep(1.0)
 
     operating_region_id = 0

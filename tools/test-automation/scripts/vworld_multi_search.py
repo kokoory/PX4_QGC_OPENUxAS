@@ -67,8 +67,49 @@ def roads_by_name(features, bbox, max_pts):
     return out
 
 
-def rivers_by_name(features, bbox, max_pts):
-    """Group river polygons by riv_nm, largest clipped ring each."""
+def _river_centerline(ring, n=24):
+    """Approximate a river-strip polygon's centreline. ring = [(lon,lat),...].
+    Uses PCA: project the ring onto its long axis, then take the mean point in
+    each cross-section band → a polyline down the middle. Good for the strip-
+    like polygons VWorld returns once clipped to a search box. Returns [(lon,lat)]."""
+    import math
+    if len(ring) < 4:
+        return ring
+    lat0 = sum(p[1] for p in ring) / len(ring)
+    kx = max(math.cos(math.radians(lat0)), 1e-6)
+    pts = [(p[0] * kx, p[1]) for p in ring]          # local metric (x,y)
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    sxx = sum((p[0] - cx) ** 2 for p in pts)
+    syy = sum((p[1] - cy) ** 2 for p in pts)
+    sxy = sum((p[0] - cx) * (p[1] - cy) for p in pts)
+    theta = 0.5 * math.atan2(2 * sxy, sxx - syy)     # long-axis angle
+    ax, ay = math.cos(theta), math.sin(theta)
+    proj = [(((p[0] - cx) * ax + (p[1] - cy) * ay), p) for p in pts]
+    tmin = min(t for t, _ in proj)
+    tmax = max(t for t, _ in proj)
+    if tmax - tmin < 1e-9:
+        return ring
+    band = (tmax - tmin) / n
+    centers = []
+    for i in range(n):
+        t0 = tmin + (tmax - tmin) * i / (n - 1)
+        near = [p for t, p in proj if abs(t - t0) <= band]
+        if not near:
+            continue
+        mx = sum(p[0] for p in near) / len(near)
+        my = sum(p[1] for p in near) / len(near)
+        centers.append((mx / kx, my))                # back to (lon,lat)
+    return centers if len(centers) >= 2 else ring
+
+
+def rivers_by_name(features, bbox, max_pts, mode="center"):
+    """Group river polygons by riv_nm (largest clipped ring each), then return
+    a path per river according to *mode*:
+      - "center": centreline polyline (fly down the river) — LineSearch
+      - "bank":   the water-surface outline (fly the riverside) — LineSearch
+      - "area":   the outline ring as a polygon — AreaSearch (lawnmower)
+    All returned as [(lat,lon), ...]."""
     best = {}
     for f in features:
         nm = (f["properties"].get("riv_nm") or "").strip()
@@ -80,13 +121,20 @@ def rivers_by_name(features, bbox, max_pts):
         for p in polys:
             clipped = vu._clip_ring_to_bbox(p[0], bbox)
             if len(clipped) >= 3:
-                ln = vu._seg_len(clipped)
-                if nm not in best or ln > best[nm][0]:
-                    best[nm] = (ln, clipped)
+                best.setdefault(nm, []).append(clipped)
     out = {}
-    for nm, (_, ring) in best.items():
-        ring = vu._decimate(ring, max_pts)
-        out[nm] = [(c[1], c[0]) for c in ring]
+    for nm, rings in best.items():
+        if mode == "center":
+            # Merge every clipped segment's points → one continuous centreline
+            # edge-to-edge across the box (a long river clipped to a middle box
+            # can split into several polygons; this keeps the path unbroken).
+            allpts = [pt for ring in rings for pt in ring]
+            path = _river_centerline(allpts)
+        else:
+            # bank / area: the single largest clipped ring
+            path = max(rings, key=vu._seg_len)
+        path = vu._decimate(path, max_pts)
+        out[nm] = [(c[1], c[0]) for c in path]
     return out
 
 
@@ -99,6 +147,10 @@ def main(argv=None) -> int:
     ap.add_argument("--names", default="ALL",
                     help='Comma-separated names, or "ALL" for every named feature')
     ap.add_argument("--max-pts", type=int, default=30)
+    ap.add_argument("--river-mode", choices=["center", "bank", "area"],
+                    default="center",
+                    help="river path: center=centreline LineSearch, "
+                         "bank=outline LineSearch, area=lawnmower AreaSearch")
     ap.add_argument("--altitude", type=float, default=120.0)
     ap.add_argument("--key", default=os.environ.get("VWORLD_KEY", ""))
     ap.add_argument("--dry-run", action="store_true")
@@ -128,7 +180,7 @@ def main(argv=None) -> int:
     if args.kind == "road":
         named = roads_by_name(feats, bbox, args.max_pts)
     else:
-        named = rivers_by_name(feats, bbox, args.max_pts)
+        named = rivers_by_name(feats, bbox, args.max_pts, args.river_mode)
     if want is not None:
         named = {k: v for k, v in named.items() if k in want}
     if not named:
@@ -156,7 +208,7 @@ def main(argv=None) -> int:
 
     if args.register_from_config:
         up.register_vehicles_from_config(ux, Path(args.register_from_config),
-                                         vehicle_ids)
+                                         vehicle_ids, altitude=args.altitude)
         time.sleep(1.0)
 
     operating_region = 0
@@ -175,7 +227,10 @@ def main(argv=None) -> int:
     task_ids = []
     for i, (nm, pts) in enumerate(named.items()):
         tid = args.task_id_base + i
-        if args.kind == "road":
+        # Roads are always lines; rivers are lines (centre/bank) unless area mode.
+        use_line = (args.kind == "road") or \
+                   (args.kind == "river" and args.river_mode in ("center", "bank"))
+        if use_line:
             task = build_line_search_task(tid, pts, vehicle_ids,
                                           altitude_m=args.altitude, label=nm)
         else:

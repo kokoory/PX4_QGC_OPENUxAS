@@ -1,0 +1,12 @@
+{
+  "name": "demo — arm, takeoff, fly mission, return, land",
+  "comment": "Sent to QGC EventBroadcaster Rx (45679). Each command runs the same guided action a human would by clicking the button. 'wait' = seconds before the step.",
+  "steps": [
+    {"wait": 0,  "action": "set_mode", "mode": "Hold", "comment": "switch to Hold"},
+    {"wait": 2,  "action": "arm",                       "comment": "arm motors"},
+    {"wait": 3,  "action": "takeoff", "altitude": 40,   "comment": "auto takeoff to 40 m"},
+    {"wait": 25, "action": "start_mission",             "comment": "begin the uploaded mission"},
+    {"wait": 90, "action": "rtl",                       "comment": "return to launch"},
+    {"wait": 40, "action": "land",                      "comment": "land"}
+  ]
+}

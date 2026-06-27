@@ -4,9 +4,9 @@
   "defaults": {
     "firmware": "PX4",
     "protocol": "MAVLink2",
-    "home_lat": 34.61167,
-    "home_lon": 127.206028,
-    "home_alt": 30.0,
+    "home_lat": 37.4979,
+    "home_lon": 127.0276,
+    "home_alt": 38.0,
     "world": "korea"
   },
   "lmcp_defaults": {
@@ -290,6 +290,36 @@
         "min_speed_mps": 12.0,
         "max_speed_mps": 30.0,
         "nominal_speed_mps": 20.0
+      }
+    },
+    {
+      "id": 11,
+      "name": "RC Cessna 2 (V500)",
+      "model": "gz_rc_cessna",
+      "type": "fixed_wing",
+      "description": "Second Cessna for OpenUxAS example02 WaterwaySearch (UxAS ID 500). NOTE: example's true V500 is ~4km E of V400, but PX4 gz EKF (GPS drift/heading) diverges when spawned that far from the world origin, so it is spawned ~300 m SE of V400 instead — both Cessnas fly and UxAS still assigns the waterway between them.",
+      "spawn_pose": {
+        "x": 300,
+        "y": -100,
+        "z": 0,
+        "yaw_deg": 0
+      },
+      "ports": {
+        "sitl_udp": 14571,
+        "qgc_udp": 14572,
+        "mavlink_tcp": 4571,
+        "offboard_udp": 14591
+      },
+      "parameters": {
+        "SYS_AUTOSTART": 4003,
+        "FW_AIRSPD_MIN": 10,
+        "FW_AIRSPD_MAX": 25,
+        "MIS_TKO_LAND_REQ": 0
+      },
+      "lmcp": {
+        "min_speed_mps": 10.0,
+        "max_speed_mps": 25.0,
+        "nominal_speed_mps": 18.0
       }
     }
   ],

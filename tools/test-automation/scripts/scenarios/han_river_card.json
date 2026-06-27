@@ -1,0 +1,20 @@
+{
+  "name": "Test card — Han River centreline search (Cessna)",
+  "comment": "Drives the whole QGC UxAS panel from this file via EventBroadcaster (45679), then flies the mission — reproduces a full operator session. NOTE: pan/zoom the 2D map onto the Han River first (the region is centred on the map view; map centre is not a panel control). Then: python3 eb_scenario.py scenarios/han_river_card.json",
+  "steps": [
+    {"wait": 0.0, "action": "ux_tab", "kind": "river",          "comment": "River tab"},
+    {"wait": 0.3, "action": "ux_x500", "value": 0,              "comment": "0 multicopters"},
+    {"wait": 0.3, "action": "ux_cessna", "value": 1,            "comment": "1 Cessna -> Vehicle IDs 4"},
+    {"wait": 0.3, "action": "ux_altitude", "value": 150,        "comment": "search altitude 150 m"},
+    {"wait": 0.3, "action": "ux_fov", "value": 45,              "comment": "Wide FOV 45 deg (footprint = UxAS lanes)"},
+    {"wait": 0.3, "action": "ux_overlap", "value": 20,          "comment": "20% image overlap"},
+    {"wait": 0.3, "action": "ux_river_mode", "mode": "center",  "comment": "follow the river centreline (LineSearch)"},
+    {"wait": 0.3, "action": "ux_shape", "value": "rect",        "comment": "rectangle region"},
+    {"wait": 0.3, "action": "ux_width", "value": 4000,          "comment": "region 4 km wide"},
+    {"wait": 0.3, "action": "ux_height", "value": 2000,         "comment": "region 2 km tall"},
+    {"wait": 1.5, "action": "ux_scan",                          "comment": "scan the region for rivers (VWorld)"},
+    {"wait": 2.5, "action": "ux_select_all", "value": true,     "comment": "select every river found"},
+    {"wait": 1.0, "action": "ux_publish",                      "comment": "publish River Search -> UxAS plans the path"},
+    {"wait": 10.0, "action": "start_mission",                   "comment": "fly the generated mission"}
+  ]
+}

@@ -26,6 +26,10 @@ IDS=""
 UXAS_HOST="127.0.0.1"
 NO_HEARTBEAT=0
 AUTO_REGISTER=1
+# QGC MessageMonitorPage listens on 45680. Override with --monitor-port 0 to
+# disable, or --monitor-port N to forward to a different port.
+MONITOR_PORT="${MONITOR_PORT:-45680}"
+MONITOR_HOST="${MONITOR_HOST:-127.0.0.1}"
 LOG_DIR="${TA_DIR}/logs/bridges_$(date +%Y%m%d_%H%M%S)"
 
 parse_args() {
@@ -36,6 +40,8 @@ parse_args() {
             --uxas-host)     UXAS_HOST="$2"; shift 2 ;;
             --no-heartbeat)  NO_HEARTBEAT=1; shift ;;
             --no-register)   AUTO_REGISTER=0; shift ;;
+            --monitor-port)  MONITOR_PORT="$2"; shift 2 ;;
+            --monitor-host)  MONITOR_HOST="$2"; shift 2 ;;
             --log-dir)       LOG_DIR="$2"; shift 2 ;;
             -h|--help)       sed -n '3,15p' "$0"; exit 0 ;;
             *) echo "unknown arg: $1" >&2; exit 1 ;;
@@ -111,6 +117,10 @@ main() {
     [[ "${NO_HEARTBEAT}" == "1" ]] && extra+=(--no-heartbeat-wait)
     [[ "${AUTO_REGISTER}" == "1" ]] && extra+=(--auto-register)
     extra+=(--non-interactive)
+    # Stream LMCP message summaries to QGC's MessageMonitor panel.
+    if [[ "${MONITOR_PORT}" -gt 0 ]] 2>/dev/null; then
+        extra+=(--monitor-port "${MONITOR_PORT}" --monitor-host "${MONITOR_HOST}")
+    fi
 
     local count=0
     while IFS=$'\t' read -r id name type sitl_udp \

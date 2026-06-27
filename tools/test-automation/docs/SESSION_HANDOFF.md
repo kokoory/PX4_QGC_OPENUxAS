@@ -1,5 +1,192 @@
 # 세션 핸드오프 노트
 
+## ★★★★★★★ 2026-06-27: QGC 양방향 스크립트화(EventBroadcaster 녹화/재생) — 자체검증 완료
+
+### 한 일
+QGC를 EventBroadcaster로 **완전 양방향 스크립트화**. 인프라는 이미 있었고(아래) 재생 경로 + 외부도구 추가.
+- **아웃바운드(이미 있음)**: `GuidedActionsController.executeAction`이 모든 가이드 버튼을 `sendEvent("action", 이름, {actionCode, sliderValue,…})`로 45678 송출. + 미션(`qgc_mission`)/MAVLink(`mavlink`).
+- **인바운드(강화)**: 45679 명령 → `onCommandReceived` 실행. **`actionCode` 경로 추가** → 녹화된 어떤 버튼이든 그대로 재생(8개 명령 제한 없음).
+- **외부 도구 3개 신규**(`tools/test-automation/scripts/`): `eb_monitor.py`(45678 시간순 뷰 + `--save` 녹화, seq dedup), `eb_replay.py`(녹화 .jsonl → 45679 재생, 원타이밍, actionCode), `eb_scenario.py`(손작성 시나리오, `scenarios/demo.json`).
+
+### 자체검증 ✅ (사람 없이 클로즈드 루프)
+`eb_scenario --action rtl` → 45679 → QGC 실행(bridge "RTL: start return at 139m") → 45678로 `action/rtl` echo 캡처 → `eb_replay`로 캡처 재생 → bridge "RTL: start return→completed, loitering" = 차량 재반응. **명령→실행→리턴값→녹화→재생→재실행 전부 동작.**
+
+### QGC 추가 기능 전체 정리 → `docs/QGC_FEATURES_ADDED.md` (신규)
+
+### ⚠️ GitHub 미반영 (중요)
+**이 세션들(06-11/06-17~18/06-27) 작업 전부 미커밋.** HEAD는 origin과 0/0(마지막 커밋 `aff133926`은 이 작업들 이전). **아직 GitHub에 아무것도 안 올라감** → 커밋/push 필요.
+
+### 06-27 후반: 패널 양방향(테스트카드) + River LineSearch + FOV + 멀티비행체 + 이종 SAR
+
+**A. 패널 완전 양방향 (테스트카드 시나리오)** — 아웃: 패널 모든 컨트롤이 `sendEvent("uxas_ui", field, {value})`. 인: `FlyViewMap._uxHandleCommand` + `Connections{EventBroadcaster onCommandReceived}` → **`ux_<field>` 명령으로 패널 구동**(`_uxReplaying` 가드). 도구: **`eb_monitor_gui.py`(신규 GUI 창)**, `eb_replay.py` uxas_ui→`ux_` 매핑, `scenarios/han_river_card.json`(예시).
+
+**B. River = LineSearch** — `vworld_multi_search.py`: `_river_centerline()`(PCA) + 모드 center/bank/area, **박스 안 조각 전부 합쳐 연속 중심선**. 패널 River 드롭다운(`_uxRiverMode`), listener `--river-mode` 전달.
+
+**C. FOV 자동+수동** — 패널 `_uxFovDeg`(Wide45/Detail20/Custom). **bridge가 파일에서 읽음**: `_camera_fov_now(vid)` → `/tmp/uxas_camera_fov_<vid>.txt`(기종별) → 공용 → 기본. listener가 발행 fov를 파일에 씀. ⚠️ **버그 교훈: bridge가 45678 직접 바인딩하면 SO_REUSEPORT 경합으로 listener가 publish 못 받음(멀티 bridge일 때 강검색 깨짐) → 파일 기반 전환. bridge는 45678 바인딩 금지.**
+
+**D. 멀티 비행체** — 풀: X500=[1,2,3,8,9], Cessna=**[4,11]**, Rover=[7]. `launch_all.sh --ids 1,2,4,11` + `launch_bridges.sh --ids 1,2,4,11`. spawn 0~300m(EKF 안전).
+
+**E. 이종 SAR (핵심 신규)** — `uxas_sar_search.py`(신규): 한 region을 기종별 티어로, **단일 AutomationRequest**. 고정익=전체 AreaSearch 고고도(250)+넓은FOV, 멀티콥터=core(45%) 저고도(60)+좁은FOV, 지상체=도로 LineSearch. 각 작업 **EligibleEntities** 제한. 기종별 NominalAltitude 재등록 + 차량별 FOV파일. **OperatingRegion 필수**(없으면 "Not Ready"→0 command). listener `kind=="sar"` 브랜치. 패널 "── Heterogeneous SAR ──" 섹션 + `_uxPublishSar()` + 인바운드 `ux_publish_sar`/`ux_rover`/`ux_fw_alt`… ✅ 4대(FW 4,11/MC 1,2) 전부 미션 생성 검증.
+
+**F. 기타** — 패널 클릭 통과 차단(uxasPanel MouseArea). 헤딩=선회 크랩(정상). 패널 폭: SAR FW/MC 두 줄 분리.
+
+**셸 주의**: 이 환경 Bash는 `pkill`/`pgrep` nonzero시 set -e로 **복합명령 중단** → launch는 **단독 명령**으로.
+
+---
+
+## ★★★★★★ 2026-06-17~18: Cessna 강검색 + 3D 비행체 헤딩(최종 해결) + VWorld 토글 + Road/River 영역지정
+
+### 이번 세션 요지
+06-11 작업(아래 ★★★★★) 이어서, **고정익 Cessna로 강남 도로/강 검색** + QGC 3D/툴바/패널 다수 개선. **미커밋 변경 매우 많음(아직 commit 안 함).**
+
+### 새/수정 기능 (전부 빌드·동작, 일부 미검증)
+1. **3D 비행체 헤딩 — 최종 해결**(여러 시행착오 끝): `Cesium3DView.html` 비행체를 **polyline 화살표 + Cesium `CallbackProperty`** 로. → ① 월드방향(카메라 돌려도 헤딩 정확) ② **CallbackProperty라 매 프레임 재생성 없음→깜박임 없음** ③ polyline이라 **CDN 폴리곤 worker 불필요**(폴리곤은 `createPolygonGeometry.js` CDN fetch 실패로 3D 뷰가 깨졌었음). 교훈: Cesium에서 매 틱 갱신되는 지오메트리는 CallbackProperty로.
+2. **3D 고도 프레임 통일**: 비행체·plan점·plan선·라벨을 전부 **절대 AMSL**로. `_groundAmsl`을 매 틱 **차량 AMSL−AGL**로 라이브 계산(home 신호는 뷰 로드 시 안 와서 0이었음). QML이 `altitudeAMSL`도 HTML로 전달.
+3. **VWorld 레이어 토글**: 상단 툴바(`FlyViewToolBarIndicators.qml`)에 **`VWorld: Bldg/Road/River`** 체크박스. 상태는 `EventBroadcaster`의 bool 3개(`showVWorldBuildings/Roads/Rivers`). Cesium3DView가 변화를 HTML `setVWorldLayerVisible()`로 전달 → 3D 건물/도로/강 show/hide.
+4. **Road/River 영역지정**(NEW, 이번 세션 마지막, **미검증**): 영역 도형(Region: Rectangle W/H · Polygon draw)을 **전 탭 공유**로. Road/River scan이 **뷰포트→그린 영역 bbox** 사용(`_uxRegionBbox`), 발행에 `region` 폴리곤 포함. **사각형은 기존 bbox 클립으로 정확**, **폴리곤은 아직 그 bbox로만 클립**(정밀 폴리곤 클립 = Python 후속 TODO).
+5. **2D 패널 추가**(06-11에 이어): 헤더 **드래그 이동**(`⠿ UxAS Plan`, margin式·앵커유지), **리사이즈 그립**(`_uxScale`), **초록 풋프린트 토글**, **기체타입 인지 커버리지**("need N Cessna"), **카메라 Overlap %**.
+6. **미션 브로드캐스트**: `MissionController` 웨이포인트 추가→`qgc_mission/waypoint_add`, 업로드→`qgc_mission/upload`를 EventBroadcaster(UDP 45678 + Monitor)로.
+7. **(A) 외부 미션변경 자동 재다운로드**: `MissionManager::_handleMissionCurrent`가 `MISSION_CURRENT.total != 로컬 count`면 `loadFromVehicle()`(distinct total당 1회). → bridge가 미션 올리면 QGC 번호 웨이포인트 자동 갱신.
+8. **Message Monitor 오토스크롤**: `onCountChanged: Qt.callLater(positionViewAtEnd)`.
+9. **새 publish 시 이전 plan-mirror 클리어**: `EventBroadcaster.clearUxasPlannedWaypoints(0)`.
+
+### Cessna 고정익 강남 검색 (동작)
+- `RECORDER=0 bash scripts/launch_all.sh --ids 4` (recorder 경합 영구 회피) → Cessna 자동이륙(60m).
+- **고정익 미션 착륙 필수**: bridge `_activate_mission`이 끝에 **NAV_LAND 자동 추가**, 단 **진행방향으로 D=alt/tan(6°) 밀어 완만 활공**(마지막wp 바로 위면 활공각>8°로 PX4 거부).
+
+### 알아둘 것 (함정/설정)
+- **`guidedMaximumAltitude` 기본 121.92m(=400ft)** 가 QGC "Change Altitude" 슬라이더 상한. 더 올리려면 Application Settings→Fly View에서 값 변경(또는 `FlyView.SettingsGroup.json` 기본값).
+- **QGC를 빌드 끝나기 전 띄우면 옛 바이너리** → `ps -eo pid,lstart`의 시작시각 > 바이너리 mtime 확인.
+- 빌드 실패 흔한 원인: QML "Property value set multiple times"(동일 시그널 핸들러 중복, 예 `onCesiumReadyChanged` 두 번).
+
+### 미검증 ❌ (다음 세션)
+- **Road/River 영역지정** 실제 발행→비행 검증(한강 중간 사각형). ← 가장 최근, 안 해봄.
+- 폴리곤 영역 **정밀 클립**(Python `_clip_line/ring_to_polygon` 추가).
+- VWorld 토글이 3D에서 실제 show/hide 되는지(빌드는 됨).
+- 미커밋 변경 **커밋 정리**.
+
+---
+
+## ★★★★★ 2026-06-11: 강남 이전 + 2D패널 3D동등화 + Cessna 도로검색 + 미션 브로드캐스트/자동재싱크 + OpenUxAS 예제02 착수
+
+### 위치/환경
+- **home을 고흥→강남역(37.4979, 127.0276, alt 38)로 변경** (`vehicles.json` defaults + `korea.sdf` spherical + `fetch_amase_overlay.py` DEFAULT_CENTER). 한강이 바로 옆이라 강 검색 테스트에 좋음.
+- **recorder/bridge 14541·14544 포트경합 영구해결책: `RECORDER=0 bash scripts/launch_all.sh ...`** (launch_all의 RECORDER env=0이면 recorder 안 띄움). 더는 recorder kill 안 해도 됨.
+
+### 어제 미검증 항목 검증 완료
+- **강(한강) AreaSearch ✅** — 단, **스캔 박스가 강 중심에 와야** 함(남쪽 강변에 걸치면 수면 폴리곤이 얇게 잘려 13wp 엉성; 강 위면 44~89wp 정상 잔디깎기). 반복 inject로 **UxAS에 stale task 쌓이면 미션 thrash** → UxAS 재시작. [[uxas-bridge-pipeline-gotchas]]
+- **3D Cesium 뷰 ✅**, **Message Monitor Bridge-tap(45680) 행 ✅** (UxAS↔Bridge/Plan/MAVLink 다 실시간). **Replay는 사용자가 설계 변경 예정 → 보류**.
+- **AMASE**: listener가 AirVehicleState+MissionCommand를 5555로 forward하도록 추가(`_loop`에 AirVehicleState/Config 케이스). AMASE GUI는 떴으나 **사용자가 AMASE 자체를 드롭**(맵 검정=배경타일 없음, 차량은 forward로 표시 가능).
+
+### Part A — 패널 Alt가 실제 비행고도 제어 (검증 완료 ✅)
+- UxAS 경로계획기는 **차량 NominalAltitude**로 웨이포인트 고도를 잡음(task의 search alt 무시). → `uxas_publish_task.register_vehicles_from_config(..., altitude=)` override 추가, `vworld_multi_search`/`uxas_publish_task`가 발행 altitude 전달. 검증: alt=120 주면 wp 120m(이전 50 고정 해결). **listener는 발행마다 subprocess라 재시작 불필요**.
+
+### Part B — 2D UxAS 패널을 3D와 완전 동등화 (`FlyViewMap.qml`)
+- 탭 **Area/Road/River**, X500/Cessna 카운트→Vehicle IDs, Altitude, **Sensor(Wide45/Detail20)**, 커버리지 readout, Area Shape(Rect W/H + Polygon 지도클릭 draw), Set vehicles, Publish. 문구도 3D와 동일.
+- **"안 보이던 글씨" = 패널이 좁아 행 우측이 화면밖 잘림** → 폭 26→32, Altitude/Sensor 행 분리.
+- 추가: **초록 풋프린트 on/off 토글**(`showCameraCoverage` 체크박스), **리사이즈 그립**(좌하단, `_uxScale`), **헤더 드래그 이동**(`⠿ UxAS Plan`, margin 조정式이라 앵커 유지·더블클릭 리셋), **기체타입 인지 커버리지**(X500/Cessna → "need N Cessna", 속도 다름), **카메라 Overlap % 설정**(`_uxOverlapPct`, 커버리지 계산+발행 페이로드 반영).
+
+### Cessna(고정익 id4) 강남 도로/Area 검색 ✅
+- **고정익 자동이륙 검증됨**(bridge `--auto-takeoff-agl 60`, 60m까지 활주이륙 후 Hold).
+- **고정익 미션은 착륙 지점 필수** → bridge `_activate_mission`이 끝에 **NAV_LAND 자동 추가**. 단 마지막wp 바로 위면 활공각>8°로 거부 → **진행방향으로 D=alt/tan(6°) 밀어 완만 활공**으로 배치. AUTO.MISSION ack=0 OK 확인.
+- bridge `--vehicle-id`는 UxAS ID이고 PX4 MAV_SYS_ID와 무관(매핑). MAV_SYS_ID는 1~255 한계.
+
+### QGC 코어 변경 (전부 빌드·검증됨)
+- **미션 브로드캐스트**: `MissionController` waypoint 추가→`qgc_mission/waypoint_add`, MISSION 업로드(sendToVehicle)→`qgc_mission/upload`를 EventBroadcaster로 송출(UDP 45678 + Message Monitor). 외부 프로그램이 듣고 나중에 시퀀스 구동 가능.
+- **(A) 외부 미션변경 자동 재다운로드**: `MissionManager::_handleMissionCurrent`가 `MISSION_CURRENT.total != 로컬 count`면 `loadFromVehicle()` (distinct total당 1회, 루프방지 `_lastExternalReloadTotal`). → bridge가 미션 올리면 QGC 번호 웨이포인트가 현재 미션으로 자동 갱신(이전 것 안 남음).
+- **3D 비행체 헤딩**: `Cesium3DView.html` billboard(화면향)→**월드 방향 화살표 폴리곤**(`_vehicleArrowPositions`, perPositionHeight) → 카메라 돌려도 실제 yaw 정확.
+- **Message Monitor 오토스크롤**: `onCountChanged: Qt.callLater(positionViewAtEnd)`.
+- **새 publish 시 이전 plan-mirror 클리어**: `_uxPublish`/`_uxPublishArea`가 `EventBroadcaster.clearUxasPlannedWaypoints(0)` 호출.
+
+### OpenUxAS 예제02 WaterwaySearch on PX4+QGC (착수, 보류)
+- 예제 cfg가 이미 **PUB 5560/PULL 5561**(=우리 bridge 포트) 노출 → AMASE 자리를 PX4 bridge가 대체. `cfg_WaterwaySearch_PX4.xml` 만듦(AMASE 5555 브리지 제거). 좌표=Deschutes 강(미국 45.32,-120.96), UAV 400/500.
+- `configs/worlds/deschutes.sdf`(오리건 원점) + PX4 worlds 심링크 + `vehicles.json` id11 두번째 Cessna 추가.
+- **월드 SDF 복사 시 `<world name>`을 PX4_GZ_WORLD와 일치시켜야** 함(안 그러면 "Timed out waiting for Gazebo world").
+- **막힌 점: 2번째 기체(V500)를 4km 떨어뜨려 스폰하면 PX4 gz EKF 발산**(heading invalid/GPS drift). 가까이(수백m) 스폰해야 둘 다 정상. → 사용자가 예제 중단하고 강남 Cessna로 전환. (재개하려면 id11 spawn을 가깝게 + bridge 2개 400/500 + UxAS는 `cfg_WaterwaySearch_PX4.xml`)
+
+### 미커밋 변경 다수 (이번 세션, 아직 commit 안 함)
+- C++: `MissionController.{cc}`, `MissionManager.{h,cc}`, `Cesium3DView.html`, `FlyViewMap.qml`, `MessageMonitorPage.qml`
+- Python: `uxas_publish_task.py`, `vworld_multi_search.py`, `uxas_search_listener.py`, `qgc_uxas_bridge.py`(NAV_LAND), `fetch_amase_overlay.py`
+- 신규: `configs/worlds/deschutes.sdf`, `configs/amase/Scenario_Gangnam.xml`, `examples/.../cfg_WaterwaySearch_PX4.xml`(OpenUxAS 트리), `vehicles.json`(id11 + 강남 home)
+
+### 빌드/실행 함정 (오늘 시간 많이 씀)
+- **QGC를 빌드 끝나기 전에 띄우면 옛 바이너리로 실행됨** → `ps -eo pid,lstart`의 QGC 시작시각이 바이너리 mtime보다 **이후**인지 확인하고 테스트.
+- set -e 쉘에서 `pkill`/`pgrep`이 매칭 없으면 1 반환 → 뒤 명령(런치) 중단. **kill과 launch는 분리된 Bash 호출로**.
+
+---
+
+## ★★★★ 2026-06-10: vanilla PX4 재구축 + publish-road 파이프라인 수정 + 검증 4건 + MAVLink 모니터
+
+### 환경 (이번 세션에서 바뀐 것)
+- **PX4 새로 받음**: `/home/swerc/PX4-Autopilot` = **upstream PX4/PX4-Autopilot main** (kokoory 포크 아님). tag `v1.18.0-alpha1-305-gd5f5c50330`. 빌드는 `PATH=/usr/bin:$PATH make px4_sitl_default` (시스템 python3.10; `/usr/local/bin/python3.8`은 SSL 깨져서 kconfiglib 설치 불가 → PATH로 우회). `korea.sdf` symlink 재생성함.
+- **EKF runaway 원인 = kokoory 포크의 `mc_nn_control` 모듈로 확정**. vanilla PX4는 220m 자동이륙·AUTO.MISSION 모두 **통제된 비행, runaway 없음**. → `vehicles.json` v1에서 `MC_NN_EN` 제거함(vanilla엔 없는 파라미터).
+- **launch_all.sh**: HEADLESS 기본 + dataman 청소 유지. 단 GUI 원하면 `GZ_GUI=1`로 실행 후 `DISPLAY=:1 gz sim -g` 별도 기동.
+
+### publish-road가 "안 되던" 원인 3개 (모두 수정)
+1. **listener 미기동** — `uxas_search_listener.py`가 안 떠 있으면 45678 수신처 없음. (운영: 띄우면 됨)
+2. **bridge가 AutomationResponse 안의 MissionCommand를 안 꺼냄** — UxAS는 standalone MissionCommand를 안 보내고 `AutomationResponse.MissionCommandList`에 담아 보냄. `qgc_uxas_bridge.py _handle_uxas_message`가 리스트 순회하도록 수정함.
+3. **recorder vs bridge 포트 경합(14541)** — `mavlink_recorder.py`(127.0.0.1:14541)가 PX4 위치 패킷을 가로채 bridge(0.0.0.0:14541)가 굶음 → AirVehicleState 미발행 → UxAS "AutomationRequest Not Ready" → 빈 응답. **임시로 recorder kill**. **TODO: launch 스크립트가 recorder/bridge에 포트를 분리해 주도록 고쳐야 함(harness 버그).**
+- 수정 후: 도로검색 → UxAS 4 task → 67~70wp MissionCommand → bridge 자동이륙 → AUTO.MISSION 비행 + plan mirror(45681)로 QGC 지도에 cyan 웨이포인트.
+
+### 검증 이슈 4건 (모두 수정)
+1. **Message Monitor가 Tx만 보임** → live `onMessageReceived`가 "plan" 채널(45681 plan mirror)을 bridge로 오인해 빈 행. **"plan" 채널 케이스 추가**(카운터/필터/라벨). 팝아웃 창은 `allowPopout:true`로 이미 됨(헤더 창 아이콘).
+2. **카메라 커버리지 1번만 찍힘** → `_lastStampCoord[v.id] = v.coordinate`가 **참조 저장**이라 `last.distanceTo(현재)`가 항상 0. **스냅샷 `QtPositioning.coordinate(lat,lon)` 저장**으로 수정. green α 0.18→0.32+테두리, z 상향, `trajectoryPoints.onPointsCleared` 자동삭제 제거(비행 중 버퍼리셋이 커버리지 지웠음)→재arm 시에만 클리어.
+3. **기수≠진행방향** → 웨이포인트 param4=0(북). bridge가 **param4 = 들어오는 leg 방위각**(wp[N]=bearing(N-1→N), PX4는 향하는 wp의 yaw 사용)으로 설정. `_bearing_deg` 헬퍼 추가. (처음엔 outgoing으로 줘서 off-by-one → 수정함)
+4. **도로 2회 주행** = **UxAS 정상 동작**(4 LineSearchTask를 1대에 chain + ViewAngleList 미설정 + 장애물 라우팅). 코드 버그 아님. 줄이려면 도로↔차량 1:1 분배 / 세그먼트 병합 / ViewAngle 명시.
+
+### 신규 기능: 일반 QGC MAVLink 트래픽 모니터 (완성, 빌드됨)
+- **C++**: `EventBroadcaster`가 `MultiVehicleManager`→각 Vehicle의 `mavCommandResult`(QGC가 보낸 명령+ack), `armedChanged`, `flightModeChanged`를 탭 → 중앙 로그에 **"mavlink" 채널**로 기록 + `messageReceived("mavlink",...)` emit(팝아웃 창들도 공유). `_connectMavlinkTap`은 생성자에서 queued로 연결.
+- **QML**(`MessageMonitorPage.qml`): "mavlink" 채널 — 카운터(`MAVLink: N`), 필터, 라벨(QGC→Vehicle / Vehicle→QGC), live 핸들러 재구성.
+- Utilities가 단일 타겟이라 `#include "MultiVehicleManager.h"`/`"Vehicle.h"` CMake 수정 불필요.
+
+### 검증 완료 ✅
+2D 도로선택→publish→비행 / Message Monitor Tx+Rx(plan)+MAVLink / 카메라 커버리지 누적 / 기수=진행방향 / vanilla PX4 무발산.
+
+### 우선순위: 내일 = 아래 "미검증 ❌" 먼저, Cessna는 그 다음 세션
+(강→3D→Bridge tap·Replay→AMASE 끝낸 뒤 멀티콥터 검증 완료되면, 그 다음에 Cessna 전환)
+
+### (다음 세션) Cessna(고정익)로 도로검색 시도
+- **차량 id 4** `gz_rc_cessna` fixed_wing, autostart 4003, `--ids 4`. 포트: sitl_udp 14544, qgc_udp 14553, mavlink_tcp 4563. params: FW_AIRSPD_MIN/MAX 10/25, `MIS_TKO_LAND_REQ=0`. lmcp 10~25 m/s.
+- **고정익 주의점**:
+  - bridge launch 시 `--mavlink udpin:0.0.0.0:14544 --vehicle-id 4 --qgc... ` 등 **id4 포트로** 바꿔야 함(현재 명령은 id1=14541). launch_bridges.sh `--ids 4` 쓰면 자동.
+  - **기수 yaw 수정(param4)은 고정익엔 무의미** — 고정익은 항상 진행방향을 향함(독립 yaw 불가). 카메라=헤딩 장착이면 자연히 맞음. (param4 설정해도 무해)
+  - **자동이륙**: 고정익 NAV_TAKEOFF는 활주/캐터펄트식. `--auto-takeoff-agl`/`--alt-takeover-agl` 동작이 멀티콥터와 다를 수 있음 → 이륙 안 되면 bridge takeoff 로직 점검 필요.
+  - **LineSearchTask(도로)는 고정익에 더 적합** — 라인 따라 비행. 강(AreaSearch)은 선회 반경(turnRadius) 커서 작은 폴리곤 어려울 수 있음.
+  - vanilla PX4에 rc_cessna airframe(4003) 있는지 확인됨(빌드에 포함). 없으면 빌드 옵션 점검.
+- recorder/bridge 포트 경합(14541 류)은 id4면 14544라 동일 패턴 — recorder kill 또는 포트분리 필요.
+
+### 내일 할 것 (미검증) ❌
+1. **강(river) 선택** — 도로만 함. 강은 줌아웃해야 `고읍천` 잡힘.
+2. **3D Cesium 뷰** — 도로/강 가시성(#5), 3D plan mirror 웨이포인트(#6 3D쪽).
+3. **Bridge tap 행**(Monitor "Bridge↔UxAS", 45680) 표시 확인 + **Replay 실제 실행**.
+4. **AMASE 통합 (가장 큰 미검증 덩어리)** — 이번 세션 한 번도 안 띄움(amase auto-disabled). 비행 시각화(#7), 지도수정 반영(#8), UxAS좌표 AMASE 표시(#6 AMASE쪽). `configs/amase/run_amase_goheung.sh`, `fetch_amase_overlay.py`(CARTO/OSM/Esri 멀티 프로바이더).
+- 미커밋 변경 다수(아직 commit 안 함): EventBroadcaster.{h,cc}, MessageMonitorPage.qml(신규), FlyViewMap.qml, qgc_uxas_bridge.py, Cesium3DView.* 등.
+
+### 풀스택 기동 순서 (이번 세션에서 동작 확인된 명령)
+```bash
+# 1) UxAS
+cd tools/test-automation/configs && \
+  ~/OpenUxAS/infrastructure/sbx/x86_64-linux/uxas-release/install/bin/uxas -cfgPath ./uxas_multi.xml &
+# 2) PX4 + Gazebo GUI (1대)
+GZ_GUI=1 PX4_DIR=/home/swerc/PX4-Autopilot bash scripts/launch_all.sh --ids 1 &
+DISPLAY=:1 gz sim -g &            # GUI 클라이언트 별도
+# 3) recorder 죽이기 (bridge와 14541 경합 — TODO 영구수정 전까지)
+kill $(pgrep -f mavlink_recorder.py)
+# 4) bridge (takeover 낮게! 50m 도로검색엔 10m)
+python3 -u scripts/qgc_uxas_bridge.py --mavlink udpin:0.0.0.0:14541 \
+  --uxas-pub tcp://127.0.0.1:5560 --uxas-pull tcp://127.0.0.1:5561 --vehicle-id 1 \
+  --auto-register --non-interactive --monitor-port 45680 \
+  --auto-takeoff-agl 30 --alt-takeover-agl 10 &
+# 5) listener (절대경로 주의, register-from-config는 생략—bridge가 등록)
+python3 -u scripts/uxas_search_listener.py --vworld-key 4AB82F93-D134-3AFB-AEA8-59CB23854556 \
+  --vehicles 1 --uxas-pub tcp://127.0.0.1:5560 --uxas-pull tcp://127.0.0.1:5561 --amase auto &
+# 6) QGC
+./build/Release/QGroundControl &
+# 검색 주입 테스트(또는 QGC에서 Publish road): UDP 45678로 {"category":"uxas_search","event":"road","data":{...,"bbox":[127.19,34.60,127.22,34.62],"names":"ALL"}}
+```
+
+---
+
 ## ★★★ 2026-06-08~09: QGC 3D 임무계획 패널 + VWorld + 올림픽대로 라이브 비행
 
 이 기간에 추가/검증된 것(모두 `kokoory/PX4_QGC_OPENUxAS` Add3Dmap에 push, HEAD `9edda44e5` 이후):

@@ -39,12 +39,37 @@ import urllib.request
 from PIL import Image
 import numpy as np
 
-TILE_URL = ("https://server.arcgisonline.com/ArcGIS/rest/services/"
-            "World_Imagery/MapServer/tile/{z}/{y}/{x}")
 TILE_SIZE = 256
 USER_AGENT = "qgc-uxas-test-automation/1.0 (AMASE offline overlay fetch)"
 
-DEFAULT_CENTER = (34.61167, 127.206028)  # vehicles.json defaults.home_*
+# Each provider: (url template, attribution). The URL uses {z}/{x}/{y} or
+# {z}/{y}/{x} as the upstream server prefers — both are normalised below.
+PROVIDERS = {
+    # satellite imagery (Esri World Imagery — what we had before)
+    "esri":        ("https://server.arcgisonline.com/ArcGIS/rest/services/"
+                    "World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    "Imagery © Esri / Maxar / Earthstar Geographics"),
+    # OpenStreetMap standard "Mapnik" tiles (road map). Per OSM Tile Usage
+    # Policy: identify the app with a real User-Agent, low volume, no bulk.
+    # 289 tiles for a one-off overlay is well within personal-use bounds.
+    "osm":         ("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "© OpenStreetMap contributors"),
+    # OSM-DE rendering (clearer Korean labels in some regions).
+    "osm-de":      ("https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+                    "© OpenStreetMap contributors / OSM-DE"),
+    # CARTO basemaps — fast, redistributable raster of OSM data.
+    "carto-light": ("https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+                    "© OpenStreetMap contributors © CARTO"),
+    "carto-dark":  ("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+                    "© OpenStreetMap contributors © CARTO"),
+    # OpenTopoMap — terrain hillshading.
+    "opentopo":    ("https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+                    "Map data © OpenStreetMap contributors, SRTM | "
+                    "© OpenTopoMap (CC-BY-SA)"),
+}
+DEFAULT_PROVIDER = "esri"
+
+DEFAULT_CENTER = (37.4979, 127.0276)  # vehicles.json defaults.home_*
 DEFAULT_AMASE_GLOB = os.path.expanduser(
     "~/myclaude/OpenUxAS/infrastructure/sbx/x86_64-linux/amase/src/OpenAMASE")
 
@@ -64,9 +89,10 @@ def tiley_to_lat(y: float, z: int) -> float:
     return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
 
 
-def fetch_tile(z: int, x: int, y: int, retries: int = 3) -> Image.Image:
+def fetch_tile(z: int, x: int, y: int, tile_url: str,
+               retries: int = 3) -> Image.Image:
     req = urllib.request.Request(
-        TILE_URL.format(z=z, x=x, y=y), headers={"User-Agent": USER_AGENT})
+        tile_url.format(z=z, x=x, y=y), headers={"User-Agent": USER_AGENT})
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
@@ -85,6 +111,8 @@ def find_overlay_dir() -> str:
         DEFAULT_AMASE_GLOB,
         os.path.expanduser("~/OpenUxAS/infrastructure/sbx/x86_64-linux/"
                            "amase/src/OpenAMASE"),
+        os.path.expanduser("~/myclaude/OpenUxAS/OpenAMASE/OpenAMASE"),
+        os.path.expanduser("~/OpenAMASE/OpenAMASE"),
     ]
     for c in candidates:
         if c and os.path.isdir(os.path.join(c, "data")):
@@ -104,6 +132,10 @@ def main() -> int:
                     help="XYZ zoom level (16 ~ 2.4 m/px, default)")
     ap.add_argument("--name", default="korea",
                     help="output base name (default: korea)")
+    ap.add_argument("--provider", default=DEFAULT_PROVIDER,
+                    choices=sorted(PROVIDERS),
+                    help="tile provider (default: esri satellite). "
+                         "OSM-family providers give a road map look.")
     ap.add_argument("--out", default=None,
                     help="overlay dir (default: auto-detect OpenAMASE "
                          "data/overlay)")
@@ -128,6 +160,8 @@ def main() -> int:
     total = nx * ny
     print(f"Coverage: lat [{south:.5f},{north:.5f}] lon [{west:.5f},{east:.5f}]")
     print(f"Tiles: {nx} x {ny} = {total} @ z{z}")
+    tile_url, attribution = PROVIDERS[args.provider]
+    print(f"Provider: {args.provider} — {attribution}")
     if total > 1500:
         sys.exit("Refusing to fetch >1500 tiles; lower --zoom or --radius-km.")
 
@@ -135,7 +169,7 @@ def main() -> int:
     done = 0
     for ty in range(y0, y1 + 1):
         for tx in range(x0, x1 + 1):
-            tile = fetch_tile(z, tx, ty)
+            tile = fetch_tile(z, tx, ty, tile_url)
             mosaic.paste(tile, ((tx - x0) * TILE_SIZE, (ty - y0) * TILE_SIZE))
             done += 1
             if done % 25 == 0 or done == total:

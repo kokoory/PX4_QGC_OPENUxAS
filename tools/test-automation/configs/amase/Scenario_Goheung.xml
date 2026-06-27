@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AMASE scenario for the Goheung (Korea) test area used by the QGC ⇆ UxAS
+  multi-vehicle pipeline. Centered on the same point QGC's flight map opens
+  on (vehicles.json defaults.home_lat/home_lon).
+
+  Intentionally empty: no AirVehicleConfiguration, no AirVehicleState, no
+  tasks. Vehicles and MissionCommand objects are streamed into AMASE LIVE
+  over its TCP bridge (port 5555) by tools/test-automation/scripts/
+  uxas_search_listener.py once UxAS plans them.
+
+  LongExtent ~0.11 deg (~5 km half-extent at this latitude) — matches the
+  default UxAS region_radius=3 km plus a little margin.
+
+  Launch (see run_amase_goheung.sh):
+    cd OpenAMASE/OpenAMASE
+    java -Xmx2048m -classpath "dist/*:lib/*" avtas.app.Application \
+        --config config/amase \
+        --scenario <abs path to this file>
+-->
+<AMASE>
+  <ScenarioData>
+    <SimulationView LongExtent="0.11" Latitude="34.61167" Longitude="127.206028"/>
+    <ScenarioName>Goheung Search Area</ScenarioName>
+    <Date>1/1/2026:12:00:00</Date>
+    <ScenarioDuration>7200.0</ScenarioDuration>
+    <TrackAgeOut/>
+  </ScenarioData>
+  <ScenarioEventList/>
+</AMASE>

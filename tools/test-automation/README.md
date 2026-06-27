@@ -752,3 +752,58 @@ Or specify at launch:
 ```bash
 ./QGroundControl --custom-actions /path/to/uxas_actions.json
 ```
+
+## UxAS-plan mirror (live view of MissionCommand in QGC + AMASE)
+
+`scripts/uxas_search_listener.py` subscribes to the UxAS external PUB
+(`tcp://127.0.0.1:5560`) and, when a `MissionCommand` arrives, mirrors it
+in two directions WITHOUT waiting for the bridge → PX4 → MAVLink → QGC
+round-trip:
+
+* **QGC** receives a JSON UDP packet on port **45681**
+  (`EventBroadcaster::_planMirrorPort`). `EventBroadcaster.uxasPlannedWaypoints`
+  is updated and both the 2D `FlyViewMap` and the 3D `Cesium3DView` render
+  the route as a violet polyline (one per vehicle id).
+* **AMASE** receives the same `MissionCommand` (and parent
+  `AutomationResponse`) over its TCP server bridge (default `127.0.0.1:5555`,
+  configured by `config/amase/Plugins.xml → TCPServer Port="5555"`). AMASE
+  draws the waypoints on its own map.
+
+CLI flags on `uxas_search_listener.py`:
+
+| Flag                     | Default        | Notes                                |
+|--------------------------|----------------|--------------------------------------|
+| `--qgc-plan-host`        | `127.0.0.1`    | QGC EventBroadcaster host            |
+| `--qgc-plan-port`        | `45681`        | EventBroadcaster plan-mirror UDP     |
+| `--amase-host`           | `127.0.0.1`    | AMASE TCP bridge host                |
+| `--amase-port`           | `5555`         | AMASE TCP bridge port                |
+| `--amase auto/on/off`    | `auto`         | `auto` = ON iff port is open at boot |
+| `--no-uxas-mirror`       | (off)          | Disable PUB subscription entirely    |
+
+### Running the Goheung AMASE scenario
+
+A minimal AMASE scenario centred on the Goheung test area lives at
+`configs/amase/Scenario_Goheung.xml`. No entities — they arrive live over
+TCP 5555. Launch AMASE:
+
+```bash
+# Optional: point at a custom AMASE install
+export AMASE_HOME=/home/swerc/myclaude/OpenUxAS/OpenAMASE/OpenAMASE
+./tools/test-automation/configs/amase/run_amase_goheung.sh
+```
+
+Then in another shell run UxAS, the bridge(s), and the listener as usual:
+
+```bash
+python3 tools/test-automation/scripts/uxas_search_listener.py
+```
+
+The listener will report on stdout whenever it mirrors a MissionCommand:
+
+```
+[mirror] MissionCommand vid=42 wps=12 -> QGC(UDP 45681) + AMASE
+```
+
+You should see the same plan appear simultaneously in QGC's 2D Fly View
+map, its 3D Cesium view, and the AMASE map.
+

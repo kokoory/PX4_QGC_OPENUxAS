@@ -35,6 +35,7 @@ import json
 import math
 import os
 import signal
+import socket
 import sys
 import textwrap
 import threading
@@ -343,8 +344,9 @@ def build_air_vehicle_state(state: VehicleState,
         cam.set_PayloadID(camera_payload_id(state.vehicle_id))
         cam.set_PointingMode(GimbalPointingMode.AirVehicleRelativeAngle)
         cam.set_Azimuth(0.0); cam.set_Elevation(-90.0)  # nadir
-        cam.set_HorizontalFieldOfView(20.0)
-        cam.set_VerticalFieldOfView(15.0)
+        _fov = _camera_fov_now(state.vehicle_id)              # per-vehicle (SAR) or shared panel FOV
+        cam.set_HorizontalFieldOfView(_fov)
+        cam.set_VerticalFieldOfView(_fov * 0.75)
         # Gimbal state (mirrors camera pointing)
         gim = GimballedPayloadState()
         gim.set_PayloadID(gimbal_payload_id(state.vehicle_id))
@@ -408,6 +410,47 @@ def build_automation_request(
     for vid in vehicle_ids:
         req.EntityList.append(vid)
     return req
+
+
+# Camera horizontal FOV (deg) used in the streamed AirVehicleState — UxAS reads
+# this to size the sensor footprint and thus the AreaSearch lane spacing. Kept in
+# sync with the QGC panel's Sensor/FOV via a shared file the search listener
+# writes (uxas_search_listener writes the published "fov" to _FOV_FILE). We read
+# it here rather than binding the EventBroadcaster port — binding 45678 in every
+# bridge would steal publishes from the listener (SO_REUSEPORT load-balancing).
+_CAMERA_FOV = [45.0]
+_FOV_FILE = "/tmp/uxas_camera_fov.txt"
+
+
+def _camera_fov_now(vid=None) -> float:
+    """Current camera FOV (deg) for the streamed AirVehicleState. Prefers a
+    per-vehicle file (/tmp/uxas_camera_fov_<vid>.txt — written by SAR tasking so
+    fixed-wing and multicopter can use different FOVs), then the shared file, then
+    the bridge's --camera-fov default."""
+    paths = []
+    if vid is not None:
+        paths.append(f"/tmp/uxas_camera_fov_{vid}.txt")
+    paths.append(_FOV_FILE)
+    for p in paths:
+        try:
+            with open(p) as fh:
+                fov = float(fh.read().strip())
+            if 1.0 <= fov <= 120.0:
+                return fov
+        except (OSError, ValueError):
+            continue
+    return _CAMERA_FOV[0]
+
+
+def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Initial great-circle bearing from point 1 to point 2, degrees 0..360
+    (0 = North, 90 = East). Used to yaw a waypoint toward the next one."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(phi2)
+    x = (math.cos(phi1) * math.sin(phi2)
+         - math.sin(phi1) * math.cos(phi2) * math.cos(dlon))
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
 def _meters_to_lat(m: float) -> float:
@@ -886,6 +929,120 @@ class MAVLinkReader:
 
 
 # ---------------------------------------------------------------------------
+# Monitor tap — fire-and-forget UDP JSON for QGC's MessageMonitor panel.
+# ---------------------------------------------------------------------------
+
+def _summarise_lmcp(obj: Any) -> str:
+    """Return a one-line "key=val ..." summary of an LMCP object.
+
+    Best-effort — pulls a handful of well-known fields (VehicleID, TaskID,
+    Latitude/Longitude, Altitude, CommandID, …) so the QGC monitor row stays
+    short. Never raises; falls back to the type name.
+    """
+    if obj is None:
+        return ""
+    name = type(obj).__name__
+    pieces = [name]
+    accessor_keys = [
+        ("vid",   "get_VehicleID"),
+        ("task",  "get_TaskID"),
+        ("cmd",   "get_CommandID"),
+        ("req",   "get_RequestID"),
+        ("mode",  "get_Mode"),
+        ("alt",   "get_Altitude"),
+        ("speed", "get_Speed"),
+    ]
+    for label, fn in accessor_keys:
+        try:
+            getter = getattr(obj, fn, None)
+            if getter is None:
+                continue
+            val = getter()
+            if val is None:
+                continue
+            if isinstance(val, float):
+                pieces.append(f"{label}={val:.2f}")
+            else:
+                pieces.append(f"{label}={val}")
+        except Exception:
+            pass
+    # Location summary for AirVehicleState etc.
+    try:
+        loc_getter = getattr(obj, "get_Location", None)
+        if loc_getter is not None:
+            loc = loc_getter()
+            if loc is not None:
+                pieces.append(f"lat={loc.get_Latitude():.5f}")
+                pieces.append(f"lon={loc.get_Longitude():.5f}")
+    except Exception:
+        pass
+    return " ".join(pieces)[:160]
+
+
+class MonitorTap:
+    """Send a one-line JSON summary per LMCP/MAVLink event to QGC's monitor port.
+
+    Used by qgc_uxas_bridge.py so QGC's MessageMonitorPage (UDP 45680 listener)
+    can show *every* LMCP message the bridge handles, in real time, without
+    needing a control connection back to the bridge. Best-effort — silently
+    drops if the socket is full or QGC isn't listening.
+    """
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 45680,
+                 vehicle_id: int = 0):
+        self.host = host
+        self.port = port
+        self.vehicle_id = vehicle_id
+        self._enabled = port > 0
+        self._sock: Optional[socket.socket] = None
+        self._lock = threading.Lock()
+        if self._enabled:
+            try:
+                self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self._sock.setblocking(False)
+            except OSError as exc:
+                print(f"[MonitorTap] disable: socket() failed: {exc}")
+                self._enabled = False
+
+    def close(self) -> None:
+        with self._lock:
+            if self._sock is not None:
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
+                self._sock = None
+
+    def emit(self, direction: str, lmcp_type: str, summary: str,
+             extra: Optional[dict] = None) -> None:
+        """Send a tap datagram.
+
+        @param direction  "uxas_out", "uxas_in", "mavlink_out", "mavlink_in"
+        @param lmcp_type  Short type name (e.g. "AirVehicleState") or ""
+        @param summary    One-line summary string with key params (cheap)
+        @param extra      Optional dict merged into payload
+        """
+        if not self._enabled or self._sock is None:
+            return
+        msg = {
+            "ts": time.time(),
+            "dir": direction,
+            "lmcp_type": lmcp_type,
+            "summary": summary,
+            "vehicle_id": self.vehicle_id,
+        }
+        if extra:
+            msg.update(extra)
+        try:
+            data = json.dumps(msg, separators=(",", ":")).encode("utf-8")
+            with self._lock:
+                if self._sock is not None:
+                    self._sock.sendto(data, (self.host, self.port))
+        except (OSError, ValueError):
+            pass  # never let monitor disruption take down the bridge
+
+
+# ---------------------------------------------------------------------------
 # UxAS ZeroMQ interface (SUB on PUB endpoint, PUSH on PULL endpoint)
 # ---------------------------------------------------------------------------
 
@@ -899,12 +1056,14 @@ class UxASInterface:
 
     def __init__(self, sub_addr: str, push_addr: str,
                  entity_id: int, service_id: int = 0,
-                 source_group: str = ""):
+                 source_group: str = "",
+                 monitor: Optional["MonitorTap"] = None):
         self.sub_addr = sub_addr
         self.push_addr = push_addr
         self.entity_id_str = str(entity_id)
         self.service_id_str = str(service_id)
         self.source_group = source_group
+        self.monitor = monitor
 
         self.ctx: Optional[zmq.Context] = None
         self.sub_socket: Optional[zmq.Socket] = None
@@ -966,6 +1125,11 @@ class UxASInterface:
         self.push_socket.send(envelope)
         with self._lock:
             self.stats.lmcp_msgs_out += 1
+        if self.monitor is not None:
+            self.monitor.emit("uxas_out",
+                              type(lmcp_obj).__name__,
+                              _summarise_lmcp(lmcp_obj),
+                              extra={"descriptor": descriptor})
 
     def on_message(self, callback: Callable[[Envelope, Any], None]) -> None:
         """Register a callback (envelope, decoded_lmcp_obj_or_None)."""
@@ -1001,6 +1165,13 @@ class UxASInterface:
                         if len(self._recent_messages) > 200:
                             self._recent_messages = \
                                 self._recent_messages[-200:]
+                    if self.monitor is not None:
+                        self.monitor.emit("uxas_in",
+                                          type(obj).__name__ if obj is not None
+                                                              else "(undecoded)",
+                                          _summarise_lmcp(obj) if obj is not None
+                                                              else env.descriptor,
+                                          extra={"descriptor": env.descriptor})
                     for cb in self._callbacks:
                         try:
                             cb(env, obj)
@@ -1033,7 +1204,9 @@ class QGCUxASBridge:
                  alt_takeover_agl_m: float = 200.0,
                  auto_arm_on_start: bool = False,
                  auto_arm_min_alt_agl_m: float = 0.0,
-                 auto_takeoff_agl_m: float = 0.0):
+                 auto_takeoff_agl_m: float = 0.0,
+                 monitor_port: int = 0,
+                 monitor_host: str = "127.0.0.1"):
         self.vehicle_id = vehicle_id
         self.state_rate_hz = state_rate_hz
         self.vehicle_label = vehicle_label or f"Vehicle_{vehicle_id}"
@@ -1042,10 +1215,18 @@ class QGCUxASBridge:
         #       min_alt, max_alt, max_climb, max_bank_deg.
         self.capability = dict(capability or {})
 
+        # Optional QGC monitor tap (per-message UDP JSON to MessageMonitorPage).
+        self.monitor: Optional[MonitorTap] = (
+            MonitorTap(host=monitor_host, port=monitor_port,
+                       vehicle_id=vehicle_id)
+            if monitor_port > 0 else None
+        )
+
         self.mavlink = MAVLinkReader(mavlink_str, vehicle_id=vehicle_id,
                                      require_heartbeat=require_heartbeat)
         self.uxas = UxASInterface(sub_addr=uxas_pub, push_addr=uxas_pull,
-                                  entity_id=vehicle_id, service_id=0)
+                                  entity_id=vehicle_id, service_id=0,
+                                  monitor=self.monitor)
 
         self._running = False
         self._state_thread: Optional[threading.Thread] = None
@@ -1102,6 +1283,8 @@ class QGCUxASBridge:
             self._takeover_thread.join(timeout=3)
         self.uxas.stop()
         self.mavlink.stop()
+        if self.monitor is not None:
+            self.monitor.close()
         print("[Bridge] Stopped")
 
     def register_vehicle(self) -> None:
@@ -1222,7 +1405,16 @@ class QGCUxASBridge:
         if cls_name == "MissionCommand":
             self._handle_mission_command(obj)
         elif cls_name == "AutomationResponse":
-            print("[Bridge] Received AutomationResponse from UxAS")
+            # UxAS delivers the planned route(s) INSIDE the AutomationResponse
+            # (MissionCommandList) — it does not also broadcast standalone
+            # MissionCommand messages in this configuration. Extract and route
+            # each embedded MissionCommand the same way as a standalone one.
+            mcs = getattr(obj, "MissionCommandList", None) or []
+            print(f"[Bridge] Received AutomationResponse from UxAS "
+                  f"({len(mcs)} MissionCommand(s))")
+            for mc in mcs:
+                if mc is not None:
+                    self._handle_mission_command(mc)
         else:
             # Quiet by default; log unfamiliar messages at debug level
             pass
@@ -1255,15 +1447,59 @@ class QGCUxASBridge:
 
     def _activate_mission(self, mc) -> None:
         wps = waypoints_from_mission_command(mc)
-        items = [{
-            "frame": 6,  # MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
-            "command": 16,  # MAV_CMD_NAV_WAYPOINT
-            "autocontinue": 1, "param1": 0, "param2": 5.0,
-            "param3": 0, "param4": 0,
-            "lat": wp.lat_deg, "lon": wp.lon_deg, "alt": wp.alt_m,
-        } for wp in wps]
-        print(f"[Bridge] Activating UxAS mission ({len(items)} waypoints) "
-              f"on vehicle {self.vehicle_id}")
+        # Yaw each waypoint along the direction of travel so the airframe (and
+        # a heading-mounted camera) points where it is going. PX4 adopts the
+        # ACTIVE waypoint's param4 while flying the leg INTO it, so waypoint N
+        # must carry the bearing of the incoming leg (N-1 → N), not the
+        # outgoing one. The first waypoint has no incoming leg, so it borrows
+        # the first outgoing bearing.
+        items = []
+        for i, wp in enumerate(wps):
+            prev = wps[i - 1] if i > 0 else None
+            if prev is not None:
+                yaw_deg = _bearing_deg(prev.lat_deg, prev.lon_deg,
+                                       wp.lat_deg, wp.lon_deg)
+            elif len(wps) > 1:
+                yaw_deg = _bearing_deg(wp.lat_deg, wp.lon_deg,
+                                       wps[1].lat_deg, wps[1].lon_deg)
+            else:
+                yaw_deg = 0.0
+            items.append({
+                "frame": 6,  # MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+                "command": 16,  # MAV_CMD_NAV_WAYPOINT
+                "autocontinue": 1, "param1": 0, "param2": 5.0,
+                "param3": 0, "param4": yaw_deg,
+                "lat": wp.lat_deg, "lon": wp.lon_deg, "alt": wp.alt_m,
+            })
+        # PX4 fixed-wing rejects AUTO.MISSION without a landing (MIS_TKO_LAND_REQ).
+        # Append a NAV_LAND at the last search waypoint so the mission is valid
+        # for both fixed-wing and multicopter (a rough "land where you finished").
+        if items:
+            last = items[-1]
+            alt_L = max(50.0, float(last.get("alt", 0.0)))
+            # Bearing of the final leg (so the touchdown extends straight ahead).
+            if len(items) >= 2:
+                brg = _bearing_deg(items[-2]["lat"], items[-2]["lon"],
+                                   last["lat"], last["lon"])
+            else:
+                brg = 0.0
+            # Push the touchdown point downrange for a gentle ~6° glide; PX4's
+            # fixed-wing landing rejects approaches steeper than ~8°, so placing
+            # NAV_LAND at the last waypoint (near-vertical descent) is refused.
+            glide_d = max(500.0, alt_L / math.tan(math.radians(6.0)))
+            brg_rad = math.radians(brg)
+            lat_land = last["lat"] + _meters_to_lat(glide_d * math.cos(brg_rad))
+            lon_land = last["lon"] + _meters_to_lon(glide_d * math.sin(brg_rad),
+                                                    last["lat"])
+            items.append({
+                "frame": 6,  # MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+                "command": 21,  # MAV_CMD_NAV_LAND
+                "autocontinue": 1, "param1": 0, "param2": 0,
+                "param3": 0, "param4": float('nan'),
+                "lat": lat_land, "lon": lon_land, "alt": 0,
+            })
+        print(f"[Bridge] Activating UxAS mission ({len(items)} waypoints, "
+              f"incl. landing) on vehicle {self.vehicle_id}")
         # Dump the converted mission for offline analysis (issue: vehicle
         # entered AUTO.MISSION but immediately reported COMPLETE/LOITER).
         try:
@@ -1525,6 +1761,16 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="If > 0, bridge auto-arms and issues NAV_TAKEOFF to "
                         "this AGL altitude (multicopter / ground-spawn use). "
                         "Default 0: disabled.")
+    p.add_argument("--monitor-port", type=int, default=0,
+                   help="If > 0, fire-and-forget JSON LMCP summaries to this "
+                        "UDP port on --monitor-host (default 127.0.0.1). QGC's "
+                        "MessageMonitorPage listens on 45680. Use 0 to "
+                        "disable (default).")
+    p.add_argument("--monitor-host", default="127.0.0.1",
+                   help="Destination host for --monitor-port (default 127.0.0.1)")
+    p.add_argument("--camera-fov", type=float, default=45.0,
+                   help="Initial camera horizontal FOV (deg) streamed to UxAS; "
+                        "auto-updated from QGC panel publishes on 45678 (default 45)")
     p.add_argument("--px4-param", action="append", default=[],
                    metavar="NAME=VALUE",
                    help="PX4 parameter to apply via MAVLink PARAM_SET after "
@@ -1535,6 +1781,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Camera FOV default; the live value tracks the QGC panel via _FOV_FILE,
+    # which the UxAS search listener writes on each publish (no port contention).
+    _CAMERA_FOV[0] = args.camera_fov
 
     capability = {
         "min_speed": args.min_speed,
@@ -1559,6 +1809,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         auto_arm_on_start=args.auto_arm_on_start,
         auto_arm_min_alt_agl_m=args.auto_arm_min_alt,
         auto_takeoff_agl_m=args.auto_takeoff_agl,
+        monitor_port=args.monitor_port,
+        monitor_host=args.monitor_host,
     )
 
     def signal_handler(signum, frame):
