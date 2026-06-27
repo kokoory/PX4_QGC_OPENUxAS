@@ -20,6 +20,24 @@ Item {
     property string cesiumToken: QGroundControl.settingsManager.appSettings.cesiumToken.rawValue
     property string vworldToken: QGroundControl.settingsManager.appSettings.vworldToken.rawValue
 
+    // VWorld layer visibility — toggled from the FlyView toolbar via shared
+    // EventBroadcaster flags; push each change into the Cesium page.
+    function _applyVWorldVis(layer, on) {
+        if (!cesiumReady) return
+        webView.runJavaScript('setVWorldLayerVisible("' + layer + '",' + (on ? 'true' : 'false') + ')')
+    }
+    function _applyAllVWorldVis() {
+        _applyVWorldVis("building", EventBroadcaster.showVWorldBuildings)
+        _applyVWorldVis("road",     EventBroadcaster.showVWorldRoads)
+        _applyVWorldVis("river",    EventBroadcaster.showVWorldRivers)
+    }
+    Connections {
+        target: EventBroadcaster
+        function onShowVWorldBuildingsChanged() { root._applyVWorldVis("building", EventBroadcaster.showVWorldBuildings) }
+        function onShowVWorldRoadsChanged()     { root._applyVWorldVis("road",     EventBroadcaster.showVWorldRoads) }
+        function onShowVWorldRiversChanged()    { root._applyVWorldVis("river",    EventBroadcaster.showVWorldRivers) }
+    }
+
     // Convert the QGC 2D flight-map zoom (web-mercator zoom level) to a
     // rough Cesium camera height so the 3D view opens framed like the 2D map.
     // flightMapZoom can still be at its uninitialised default (~2) the moment
@@ -264,20 +282,26 @@ Item {
     // ---------------------------------------------------------------
     Timer {
         interval: 100
-        running: cesiumReady && activeVehicle !== null
+        running: cesiumReady
         repeat: true
         onTriggered: {
-            if (!activeVehicle || !activeVehicle.coordinate.isValid) return;
-
-            var lat = activeVehicle.coordinate.latitude;
-            var lon = activeVehicle.coordinate.longitude;
-            var alt = activeVehicle.altitudeRelative.rawValue || 0;
-            var heading = activeVehicle.heading.rawValue || 0;
-            var id = activeVehicle.id;
-
-            webView.runJavaScript(
-                'updateVehiclePosition(' + id + ',' + lat + ',' + lon + ',' + alt + ',' + heading + ')'
-            );
+            // Update EVERY connected vehicle, not just the active one, so the whole
+            // fleet (multi-vehicle / heterogeneous SAR) shows in 3D. The HTML keys
+            // entities by vehicle id, so each gets its own marker + heading arrow.
+            var vlist = QGroundControl.multiVehicleManager.vehicles;
+            if (!vlist) return;
+            for (var i = 0; i < vlist.count; i++) {
+                var v = vlist.get(i);
+                if (!v || !v.coordinate.isValid) continue;
+                var lat = v.coordinate.latitude;
+                var lon = v.coordinate.longitude;
+                var alt = v.altitudeRelative.rawValue || 0;
+                var amsl = v.altitudeAMSL.rawValue || alt;
+                var heading = v.heading.rawValue || 0;
+                webView.runJavaScript(
+                    'updateVehiclePosition(' + v.id + ',' + lat + ',' + lon + ',' + alt + ',' + heading + ',' + amsl + ')'
+                );
+            }
         }
     }
 
@@ -346,8 +370,54 @@ Item {
         function onVisualItemsChanged() { _updateMissionItems() }
     }
 
+    // ---------------------------------------------------------------
+    // UxAS-planned waypoints (LIVE, no PX4 round-trip)
+    //
+    // EventBroadcaster.uxasPlannedWaypoints = { "<vid>": [[lat,lon,alt],...] }
+    // Forwarded into the Cesium page via setPlannedWaypoints / clearPlannedWaypoints
+    // (defined in Cesium3DView.html). Replays full state on cesiumReady so the
+    // overlay shows up even if QGC was opened after UxAS already planned.
+    // ---------------------------------------------------------------
+    property var _lastPlannedKeys: []
+    function _pushPlannedWaypoints() {
+        if (!cesiumReady) return;
+        var m = EventBroadcaster.uxasPlannedWaypoints || ({})
+        var keys = Object.keys(m)
+        // Clear any vehicle that disappeared
+        for (var i = 0; i < _lastPlannedKeys.length; i++) {
+            var prev = _lastPlannedKeys[i]
+            if (keys.indexOf(prev) < 0) {
+                webView.runJavaScript('clearPlannedWaypoints(' + prev + ')')
+            }
+        }
+        // Push current state for each known vehicle
+        for (var j = 0; j < keys.length; j++) {
+            var vid = keys[j]
+            var arr = m[vid] || []
+            var triplets = []
+            for (var k = 0; k < arr.length; k++) {
+                var p = arr[k]
+                triplets.push([Number(p[0]), Number(p[1]),
+                               p.length >= 3 ? Number(p[2]) : 0])
+            }
+            webView.runJavaScript(
+                'setPlannedWaypoints(' + vid + ',\'' + JSON.stringify(triplets) + '\')'
+            )
+        }
+        _lastPlannedKeys = keys.slice()
+    }
+
+    Connections {
+        target: EventBroadcaster
+        function onUxasPlannedWaypointsChanged() { _pushPlannedWaypoints() }
+    }
+
     onCesiumReadyChanged: {
-        if (cesiumReady) _updateMissionItems()
+        if (cesiumReady) {
+            _updateMissionItems()
+            _pushPlannedWaypoints()
+            _applyAllVWorldVis()
+        }
     }
 
     // ---------------------------------------------------------------

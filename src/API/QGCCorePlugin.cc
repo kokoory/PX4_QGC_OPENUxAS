@@ -82,6 +82,10 @@ const QVariantList &QGCCorePlugin::analyzePages()
             tr("Vibration"),
             QUrl::fromUserInput(QStringLiteral("qrc:/qml/QGroundControl/AnalyzeView/Vibration/VibrationPage.qml")),
             QUrl::fromUserInput(QStringLiteral("qrc:/qmlimages/VibrationPageIcon")))),
+        QVariant::fromValue(new QmlComponentInfo(
+            tr("Messages"),
+            QUrl::fromUserInput(QStringLiteral("qrc:/qml/QGroundControl/AnalyzeView/MessageMonitor/MessageMonitorPage.qml")),
+            QUrl::fromUserInput(QStringLiteral("qrc:/qmlimages/MAVLinkInspector.svg")))),
     };
 
     return analyzeList;

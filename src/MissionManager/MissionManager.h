@@ -43,4 +43,7 @@ private:
     void _handleHeartbeat(const mavlink_message_t& message);
 
     int _cachedLastCurrentIndex;
+    // Last MISSION_CURRENT.total we reloaded for, so an externally-changed
+    // mission triggers exactly one re-download per distinct count (no loops).
+    int _lastExternalReloadTotal = -1;
 };

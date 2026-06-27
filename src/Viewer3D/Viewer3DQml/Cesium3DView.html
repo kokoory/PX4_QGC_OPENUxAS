@@ -25,7 +25,7 @@
         }
         /* OpenUxAS area-search planning panel (in-page, draws over the globe) */
         #uxasPanel {
-            position: absolute; top: 50px; right: 12px; width: 250px;
+            position: absolute; top: 120px; right: 12px; width: 250px;
             background: rgba(24,28,34,0.90); color: #e8e8e8;
             font: 12px/1.4 sans-serif; border: 1px solid #5a6472;
             border-radius: 6px; padding: 8px 10px; z-index: 1000;
@@ -203,6 +203,12 @@
     }
 
     var VEHICLE_ICON = null;
+    var _groundAmsl = 0;   // home/ground AMSL, so AGL altitudes render at a
+                           // consistent absolute height (vehicle + plan match).
+    // Per-vehicle {lat, lon, alt(absolute AMSL), heading}. The vehicle arrow
+    // polyline reads this via a CallbackProperty, so updating it each tick is
+    // smooth (no per-frame geometry rebuild → no flicker).
+    var vehicleArrowState = {};
 
     // VWorld (브이월드) covers only Korea. Restrict tile requests to this
     // box so Cesium doesn't spam 404s elsewhere and falls through to the
@@ -256,6 +262,22 @@
         _clearEntities(buildingEntities);
         _clearEntities(roadEntities);
         _clearEntities(riverEntities);
+    }
+
+    // VWorld layer visibility (toggled from the FlyView toolbar).
+    var _vworldVis = { building: true, road: true, river: true };
+    function _vworldArr(layer) {
+        return layer === "building" ? buildingEntities
+             : layer === "road"     ? roadEntities
+             : layer === "river"    ? riverEntities : [];
+    }
+    function _applyVWorldVis(layer) {
+        var on = _vworldVis[layer] !== false;
+        _vworldArr(layer).forEach(function (e) { e.show = on; });
+    }
+    function setVWorldLayerVisible(layer, on) {
+        _vworldVis[layer] = !!on;
+        _applyVWorldVis(layer);
     }
 
     // Ask QML to fetch buildings for the current view. The VWorld Data API
@@ -323,6 +345,7 @@
                 roadEntities.push(ent);
             });
         });
+        _applyVWorldVis("road");
     }
 
     // Rivers (LT_C_WKMSTRM, MultiPolygon) → translucent blue surfaces.
@@ -350,6 +373,7 @@
                 riverEntities.push(ent);
             });
         });
+        _applyVWorldVis("river");
     }
 
     // Called by QML with the VWorld GetFeature JSON (string).
@@ -399,6 +423,7 @@
                 });
                 buildingEntities.push(ent);
             });
+            _applyVWorldVis("building");
         };
 
         // Sample terrain for all buildings in one batch, then build them.
@@ -483,20 +508,50 @@
     //   + vertical altitude line
     // NO alignedAxis, NO disableDepthTestDistance
     // ===============================================================
-    function updateVehiclePosition(vehicleId, lat, lon, alt, heading) {
+    // A flat aircraft-arrow built from WORLD coordinates at the vehicle's
+    // ABSOLUTE (AMSL) altitude, pointing along the real heading. Oriented in
+    // world space (unlike a screen-facing billboard) so the heading stays
+    // correct from any camera angle. Returns a CLOSED loop of Cartesian3.
+    function _vehicleArrowPositions(lat, lon, absAlt, headingDeg) {
+        var h = Cesium.Math.toRadians(headingDeg);
+        var noseL = 38, tailL = 20, halfW = 18;   // metres
+        var fN = Math.cos(h), fE = Math.sin(h);            // forward unit (N,E)
+        var rN = Math.cos(h + Math.PI / 2), rE = Math.sin(h + Math.PI / 2); // right
+        var mPerLat = 111320.0, mPerLon = 111320.0 * Math.cos(Cesium.Math.toRadians(lat));
+        function pt(north, east) {
+            return Cesium.Cartesian3.fromDegrees(lon + east / mPerLon,
+                                                 lat + north / mPerLat, absAlt);
+        }
+        var nose = pt(fN * noseL, fE * noseL);
+        return [
+            nose,
+            pt(-fN * tailL + rN * halfW, -fE * tailL + rE * halfW),  // right tail
+            pt(-fN * tailL * 0.4, -fE * tailL * 0.4),                // tail notch
+            pt(-fN * tailL - rN * halfW, -fE * tailL - rE * halfW),  // left tail
+            nose,                                                    // close loop
+        ];
+    }
+    function updateVehiclePosition(vehicleId, lat, lon, alt, heading, amsl) {
         if (!viewer) return;
         heading = heading || 0;
-        var position = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+        // Live ground AMSL = vehicle AMSL − AGL, so the plan waypoints (AGL) can
+        // be rendered in the same absolute frame as the vehicle. Updated every
+        // tick (the home-position signal alone is unreliable across view loads).
+        if (amsl !== undefined && amsl !== null) _groundAmsl = amsl - alt;
+        var absAlt = (amsl !== undefined && amsl !== null) ? amsl : (alt + _groundAmsl);
+        var position = Cesium.Cartesian3.fromDegrees(lon, lat, absAlt);
 
+        // Drive the world-oriented arrow via shared state (read by a
+        // CallbackProperty) — smooth, no per-frame geometry rebuild.
+        vehicleArrowState[vehicleId] = { lat: lat, lon: lon, alt: absAlt, heading: heading };
 
-        var groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+        var groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, _groundAmsl);
         var rotRad = Cesium.Math.toRadians(heading);
         var hpr = new Cesium.HeadingPitchRoll(rotRad, 0, 0);
         var orient = Cesium.Transforms.headingPitchRollQuaternion(groundPos, hpr);
 
         if (vehicleEntities[vehicleId]) {
             vehicleEntities[vehicleId].position = position;
-            vehicleEntities[vehicleId].billboard.rotation = -rotRad;
             if (vehicleShadows[vehicleId]) {
                 vehicleShadows[vehicleId].position = groundPos;
                 vehicleShadows[vehicleId].orientation = orient;
@@ -508,17 +563,23 @@
                 vehicleLines[vehicleId].polyline.positions = [groundPos, position];
             }
         } else {
-            // Billboard: heightReference does the terrain math for us
+            // World-oriented aircraft arrow as a POLYLINE (no CDN polygon
+            // worker), with positions driven by a CallbackProperty so per-tick
+            // updates are smooth (no geometry rebuild → no flicker). Heading is
+            // correct from any camera angle because the points are world-space.
             vehicleEntities[vehicleId] = viewer.entities.add({
                 id: "vehicle_" + vehicleId,
                 position: position,
-                billboard: {
-                    image: VEHICLE_ICON,
-                    width: 48, height: 48,
-                    rotation: -rotRad,
-                    verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                    horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+                polyline: {
+                    positions: new Cesium.CallbackProperty((function (vid) {
+                        return function () {
+                            var s = vehicleArrowState[vid];
+                            return s ? _vehicleArrowPositions(s.lat, s.lon, s.alt, s.heading) : [];
+                        };
+                    })(vehicleId), false),
+                    width: 4,
+                    material: Cesium.Color.fromCssColorString("#e74c3c"),
+                    arcType: Cesium.ArcType.NONE,
                 },
             });
 
@@ -537,7 +598,6 @@
                     showBackground: true,
                     backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.fromCssColorString("#e74c3c"), 0.8),
                     backgroundPadding: new Cesium.Cartesian2(6, 4),
-                    heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
                 },
             });
 
@@ -671,10 +731,78 @@
     }
 
     // ===============================================================
+    // UxAS-planned waypoints (live, no PX4 round-trip)
+    //
+    //   setPlannedWaypoints(vehicleId, jsonArray)   jsonArray = '[[lat,lon,alt],...]'
+    //
+    // Keyed by vehicle id, so multiple vehicles' plans coexist. Drawn as a
+    // violet polyline + small violet point per waypoint.
+    // ===============================================================
+    var plannedEntities = {};   // vehicleId -> [Entity, ...]
+    function setPlannedWaypoints(vehicleId, itemsJson) {
+        if (!viewer) return;
+        var key = String(vehicleId);
+        // remove previous entities for this vehicle
+        if (plannedEntities[key]) {
+            plannedEntities[key].forEach(function(e) { viewer.entities.remove(e); });
+            plannedEntities[key] = [];
+        }
+        var items;
+        try { items = JSON.parse(itemsJson); }
+        catch (e) { console.warn("setPlannedWaypoints bad JSON: " + e); return; }
+        if (!items || items.length === 0) return;
+
+        var positions = [];
+        var entities = [];
+        items.forEach(function(t, idx) {
+            var lat = t[0], lon = t[1], alt = t.length >= 3 ? t[2] : 0;
+            // Absolute height (AGL + ground AMSL) so the dots, the dashed path
+            // line, and the vehicle all sit at the SAME altitude frame.
+            var pos = Cesium.Cartesian3.fromDegrees(lon, lat, alt + _groundAmsl);
+            positions.push(pos);
+            var dot = viewer.entities.add({
+                id: "uxas_plan_v" + key + "_" + idx,
+                position: pos,
+                point: {
+                    pixelSize: 8,
+                    color: Cesium.Color.fromCssColorString("#bb44ff"),
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 1,
+                },
+            });
+            entities.push(dot);
+        });
+        if (positions.length > 1) {
+            var line = viewer.entities.add({
+                id: "uxas_plan_path_v" + key,
+                polyline: {
+                    positions: positions,
+                    width: 4,
+                    material: new Cesium.PolylineDashMaterialProperty({
+                        color: Cesium.Color.fromCssColorString("#bb44ff"),
+                        dashLength: 18.0,
+                    }),
+                },
+            });
+            entities.push(line);
+        }
+        plannedEntities[key] = entities;
+    }
+
+    function clearPlannedWaypoints(vehicleId) {
+        if (!viewer) return;
+        var key = String(vehicleId);
+        if (!plannedEntities[key]) return;
+        plannedEntities[key].forEach(function(e) { viewer.entities.remove(e); });
+        delete plannedEntities[key];
+    }
+
+    // ===============================================================
     // Home: point + label with CLAMP_TO_GROUND + ring ellipse
     // ===============================================================
     function setHomePosition(lat, lon, alt) {
         if (!viewer) return;
+        _groundAmsl = alt || 0;   // ground AMSL reference for AGL→absolute height
         var pos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
         if (homeEntity) {
             homeEntity.position = pos;
@@ -1024,17 +1152,27 @@
         var names = Object.keys(groups).sort();
         names.forEach(function (nm) {
             var ents = [];
+            // Candidates: muted base colour. Selection (in _uxSetSelected) lifts
+            // these to a bright cyan glow with outline so the picked road / river
+            // stands out clearly against the satellite imagery.
             var color = (kind === "road") ? Cesium.Color.ORANGE : Cesium.Color.DODGERBLUE;
             groups[nm].forEach(function (seg) {
                 var flat = []; seg.forEach(function (c) { flat.push(c[0], c[1]); });
                 if (kind === "road") {
                     ents.push(viewer.entities.add({ name: kind + ":" + nm, polyline: {
-                        positions: Cesium.Cartesian3.fromDegreesArray(flat), width: 4,
-                        material: color.withAlpha(0.55), clampToGround: true } }));
+                        positions: Cesium.Cartesian3.fromDegreesArray(flat), width: 5,
+                        material: new Cesium.PolylineOutlineMaterialProperty({
+                            color: color.withAlpha(0.55),
+                            outlineColor: Cesium.Color.BLACK.withAlpha(0.35),
+                            outlineWidth: 1,
+                        }),
+                        clampToGround: true } }));
                 } else {
                     ents.push(viewer.entities.add({ name: kind + ":" + nm, polygon: {
                         hierarchy: Cesium.Cartesian3.fromDegreesArray(flat),
                         material: color.withAlpha(0.30),
+                        outline: true,
+                        outlineColor: color.withAlpha(0.8),
                         classificationType: Cesium.ClassificationType.TERRAIN } }));
                 }
             });
@@ -1058,10 +1196,30 @@
         var f = featData[kind][nm]; if (!f) return;
         f.selected = on;
         var base = (kind === "road") ? Cesium.Color.ORANGE : Cesium.Color.DODGERBLUE;
-        var col = on ? Cesium.Color.LIME : base;
+        // Selected: bright cyan with thick black outline (roads) or
+        // saturated fill + bright outline (rivers). Far easier to spot
+        // against VWorld satellite imagery than the previous LIME.
+        var selCol = Cesium.Color.fromCssColorString("#00ffff");
         f.entity.forEach(function (e) {
-            if (e.polyline) e.polyline.material = col.withAlpha(on ? 0.95 : 0.55);
-            if (e.polygon) e.polygon.material = col.withAlpha(on ? 0.45 : 0.30);
+            if (e.polyline) {
+                e.polyline.material = on
+                    ? new Cesium.PolylineOutlineMaterialProperty({
+                        color: selCol,
+                        outlineColor: Cesium.Color.BLACK,
+                        outlineWidth: 2,
+                      })
+                    : new Cesium.PolylineOutlineMaterialProperty({
+                        color: base.withAlpha(0.55),
+                        outlineColor: Cesium.Color.BLACK.withAlpha(0.35),
+                        outlineWidth: 1,
+                      });
+                e.polyline.width = on ? 8 : 5;
+            }
+            if (e.polygon) {
+                e.polygon.material = on ? selCol.withAlpha(0.55) : base.withAlpha(0.30);
+                e.polygon.outline = true;
+                e.polygon.outlineColor = on ? selCol : base.withAlpha(0.8);
+            }
         });
         // sync the checkbox
         var cb = document.querySelector("input[data-kind='" + kind + "'][data-name='" + nm.replace(/'/g, "") + "']");

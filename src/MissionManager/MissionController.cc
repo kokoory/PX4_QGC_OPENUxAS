@@ -24,6 +24,7 @@
 #include "MissionCommandTree.h"
 #include "QGC.h"
 #include "QGCLoggingCategory.h"
+#include "EventBroadcaster.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -193,6 +194,16 @@ void MissionController::sendToVehicle(void)
             sendItemsToVehicle(_managerVehicle, _visualItems);
         }
         setDirty(false);
+        // Broadcast the mission upload (the "MISSION" / Upload action) so it is
+        // recorded in the Message Monitor and visible to external programs.
+        if (EventBroadcaster::instance()) {
+            EventBroadcaster::instance()->sendEvent(
+                QStringLiteral("qgc_mission"), QStringLiteral("upload"),
+                QVariantMap{
+                    {QStringLiteral("vehicle_id"), _managerVehicle ? _managerVehicle->id() : 0},
+                    {QStringLiteral("item_count"), _visualItems ? _visualItems->count() : 0},
+                });
+        }
     }
 }
 
@@ -306,7 +317,20 @@ VisualMissionItem* MissionController::_insertSimpleMissionItemWorker(QGeoCoordin
 
 VisualMissionItem* MissionController::insertSimpleMissionItem(QGeoCoordinate coordinate, int visualItemIndex, bool makeCurrentItem)
 {
-    return _insertSimpleMissionItemWorker(coordinate, MAV_CMD_NAV_WAYPOINT, visualItemIndex, makeCurrentItem);
+    VisualMissionItem* item = _insertSimpleMissionItemWorker(coordinate, MAV_CMD_NAV_WAYPOINT, visualItemIndex, makeCurrentItem);
+    // Broadcast the UI action so the Message Monitor records it and external
+    // programs (on UDP 45678) can observe / later replay the editing sequence.
+    if (EventBroadcaster::instance()) {
+        EventBroadcaster::instance()->sendEvent(
+            QStringLiteral("qgc_mission"), QStringLiteral("waypoint_add"),
+            QVariantMap{
+                {QStringLiteral("lat"),   coordinate.latitude()},
+                {QStringLiteral("lon"),   coordinate.longitude()},
+                {QStringLiteral("index"), visualItemIndex},
+                {QStringLiteral("seq"),   item ? item->sequenceNumber() : -1},
+            });
+    }
+    return item;
 }
 
 VisualMissionItem* MissionController::insertTakeoffItem(QGeoCoordinate /*coordinate*/, int visualItemIndex, bool makeCurrentItem)

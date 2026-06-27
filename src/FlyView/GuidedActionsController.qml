@@ -359,6 +359,17 @@ Item {
                 return
             }
 
+            // Faithful replay path: every guided-action button press is broadcast
+            // with its numeric actionCode (+ sliderValue / optionChecked). When a
+            // command carries actionCode we replay THAT exact action, so a recorded
+            // session (any button) plays back identically — not just the named
+            // commands handled below.
+            if (params["actionCode"] !== undefined && params["actionCode"] !== null) {
+                executeAction(Number(params["actionCode"]), undefined,
+                              params["sliderValue"], params["optionChecked"])
+                return
+            }
+
             switch (action) {
             case "arm":
                 executeAction(actionArm)

@@ -41,5 +41,37 @@ Item {
                 visible:            item.showIndicator
             }
         }
+
+        // VWorld 3D layer toggles (buildings / roads / rivers) — show/hide the
+        // VWorld vectors drawn in the 3D Cesium view. State lives on the shared
+        // EventBroadcaster so the 3D view reacts.
+        Row {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing:                ScreenTools.defaultFontPixelWidth
+            visible:                QGroundControl.settingsManager.appSettings.cesiumToken.rawValue !== ""
+            QGCLabel {
+                anchors.verticalCenter: parent.verticalCenter
+                text:                   qsTr("VWorld:")
+                opacity:                0.8
+            }
+            QGCCheckBox {
+                anchors.verticalCenter: parent.verticalCenter
+                text:                   qsTr("Bldg")
+                checked:                EventBroadcaster.showVWorldBuildings
+                onClicked:              EventBroadcaster.showVWorldBuildings = checked
+            }
+            QGCCheckBox {
+                anchors.verticalCenter: parent.verticalCenter
+                text:                   qsTr("Road")
+                checked:                EventBroadcaster.showVWorldRoads
+                onClicked:              EventBroadcaster.showVWorldRoads = checked
+            }
+            QGCCheckBox {
+                anchors.verticalCenter: parent.verticalCenter
+                text:                   qsTr("River")
+                checked:                EventBroadcaster.showVWorldRivers
+                onClicked:              EventBroadcaster.showVWorldRivers = checked
+            }
+        }
     }
 }

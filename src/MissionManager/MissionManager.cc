@@ -268,6 +268,22 @@ void MissionManager::_handleMissionCurrent(const mavlink_message_t& message)
     mavlink_mission_current_t missionCurrent;
     mavlink_msg_mission_current_decode(&message, &missionCurrent);
     _updateMissionIndex(missionCurrent.seq);
+
+    // Auto-resync when the vehicle's mission was changed by something other than
+    // this QGC (e.g. the qgc_uxas_bridge uploading a UxAS plan). The vehicle
+    // reports its item count in MISSION_CURRENT.total; if it no longer matches
+    // what we hold, re-download so the numbered waypoints reflect the live plan.
+    // Reload at most once per distinct total to avoid any off-by-one reload loop.
+    const int reportedTotal = static_cast<int>(missionCurrent.total);
+    if (reportedTotal > 0 && !inProgress()
+            && reportedTotal != _missionItems.count()
+            && reportedTotal != _lastExternalReloadTotal) {
+        qCDebug(MissionManagerLog) << "MISSION_CURRENT total" << reportedTotal
+                                   << "differs from local" << _missionItems.count()
+                                   << "— external change, reloading mission";
+        _lastExternalReloadTotal = reportedTotal;
+        loadFromVehicle();
+    }
 }
 
 void MissionManager::_handleHeartbeat(const mavlink_message_t& message)
