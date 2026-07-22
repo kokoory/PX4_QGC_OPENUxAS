@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 22mm 20mm; @bottom-center { content: counter(page); font-size: 9px; color:#888; } }
+  * { box-sizing: border-box; }
+  body { font-family: "Times New Roman", "Nimbus Roman", "Noto Serif CJK KR", serif; font-size: 10pt; line-height: 1.5; color:#111; text-align: justify; }
+  .title { font-size: 17pt; font-weight: bold; text-align:center; margin: 0 0 4pt; line-height:1.3; }
+  .authors { text-align:center; font-size: 10.5pt; margin: 6pt 0 2pt; }
+  .affil { text-align:center; font-size: 9pt; color:#333; font-style: italic; margin-bottom: 14pt; }
+  h2 { font-size: 11pt; margin: 14pt 0 4pt; }
+  h3 { font-size: 10pt; margin: 9pt 0 3pt; font-style: italic; }
+  .abstract { font-size: 9pt; margin: 0 8mm; }
+  .abstract .h { font-weight: bold; font-style: italic; }
+  .kw { font-size: 9pt; margin: 6pt 8mm 0; }
+  p { margin: 4pt 0; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; background:#f2f2f2; padding:0 3px; border-radius:2px; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 8.5pt; }
+  th, td { border: 1px solid #bbb; padding: 3px 6px; }
+  th { background:#eee; }
+  .cap { font-size: 8pt; text-align:center; color:#333; margin: 2pt 0 8pt; }
+  ol.steps { font-size: 9.5pt; margin: 4pt 0 4pt 16pt; padding:0; }
+  hr { border:none; border-top:1px solid #ccc; margin: 10pt 0; }
+  .note { font-size: 8.5pt; color:#444; }
+</style>
+</head>
+<body>
+
+<div class="title">Record-and-Replay of Ground Control Station UIs:<br>Global Event Hooking for Reproducible, Telemetry-Conditioned Scenario Automation</div>
+<div class="authors">Author Name(s)</div>
+<div class="affil">Affiliation · e-mail · 2026</div>
+
+<div class="abstract">
+<span class="h">Abstract—</span>
+Ground control stations (GCS) for unmanned aerial vehicles (UAVs) are human-in-the-loop
+systems whose behaviour is driven through a graphical user interface (UI): an operator arms
+the vehicle, edits missions, switches modes and triggers guided actions by hand. This manual,
+UI-mediated nature makes mission-level scenarios difficult to test, demonstrate or reproduce:
+the same sequence of operations must be re-performed by a person, and time- or state-dependent
+actions (e.g. "when the vehicle climbs above 500&nbsp;m, jump to waypoint&nbsp;3") cannot be expressed at all.
+We present a framework that turns an unmodified GCS UI into a scriptable, record-and-replay
+surface. Rather than instrumenting individual widgets, we hook the small set of reusable base
+controls from which the entire application is composed, so that every button, checkbox, combo
+box, text field, radio button and slider automatically (i) broadcasts each user interaction as a
+structured event and (ii) can be actuated from an inbound command exactly as a human click
+would. On top of this bus we build a scenario engine that supports temporal triggers (relative
+and absolute time) and <span class="h">telemetry-conditioned</span> triggers evaluated against a live vehicle-state
+stream, enabling an operator to author, save and replay a complete mission start-to-finish. We
+implement the approach in QGroundControl over a UDP event bus and show that six instrumented
+base controls cover 225 UI call sites across the application, with ~160 live controls registered at
+start-up and no per-widget code changes. Round-trip replay reproduces recorded operator sessions,
+and telemetry conditions fire mission actions autonomously. The result is reproducible,
+condition-triggered automation of a UAV GCS suitable for regression testing, demonstration and
+scenario-based evaluation.
+</div>
+<div class="kw"><span class="h">Index Terms—</span> ground control station, unmanned aerial vehicle, record-and-replay, UI instrumentation, event hooking, scenario-driven testing, telemetry-conditioned triggers, reproducibility, human-in-the-loop.</div>
+
+<hr>
+
+<h2>I. Introduction</h2>
+<p><b>Motivation.</b> A GCS is operated entirely through its UI; therefore testing/demonstrating a
+UAV mission means a human repeating clicks. This is (a) <i>non-reproducible</i> — timing and order vary
+per run; (b) <i>non-scriptable</i> — no way to express state-dependent actions; (c) <i>labour-intensive</i>
+for regression across many vehicle/mission configurations.</p>
+<p><b>Problem statement.</b> How can an existing GCS UI be made <i>fully recordable and replayable</i>,
+and <i>conditionally scriptable</i>, without invasive per-widget modification?</p>
+<p><b>Contributions.</b> (1) A <i>base-control event-hooking</i> technique that instruments an entire GCS
+by modifying only the reusable base widgets, giving near-total UI coverage with minimal, non-colliding
+changes. (2) A bidirectional <i>event bus</i> that both broadcasts interactions and replays them as real
+actuations, with an echo-suppression guard. (3) A <i>scenario engine</i> with temporal and
+telemetry-conditioned triggers, plus a live control-discovery/authoring tool. (4) An implementation
+in QGroundControl and an empirical characterisation of coverage and replay fidelity.</p>
+
+<h2>II. Related Work</h2>
+<p>GUI record-and-replay and capture/replay testing (coordinate-, widget- and event-level);
+model-based and scenario-based testing; software/hardware-in-the-loop UAV simulation (PX4 SITL,
+MAVSDK scripting). Prior GCS automation typically drives the <i>autopilot</i> via MAVLink, bypassing the
+operator UI; we instead automate the <i>UI itself</i>, capturing exactly what the human would do, including
+UI-only state that never reaches the vehicle. <span class="note">[Fill with citations.]</span></p>
+
+<h2>III. Approach</h2>
+<h3>A. Base-control instrumentation</h3>
+<p>A GCS built on a widget toolkit funnels virtually all interaction through a handful of styled base
+controls. We attach to each a non-invasive observer (a signal connection that fires <i>in addition to</i>,
+not replacing, the application's own handlers) plus lifecycle registration. Each control derives a stable,
+human-readable identifier from an explicit id, else its object name, else its type and label, with an
+ordinal suffix to disambiguate duplicates.</p>
+<h3>B. Bidirectional event bus</h3>
+<p>Interactions are emitted on a broadcast channel (<code>ui</code>) carrying <code>{id,type,value}</code>. An inbound
+command <code>{action:"ui",id,value}</code> looks the control up in a registry and re-emits its native signal,
+reproducing the exact effect of a user action. A replay guard suppresses re-broadcast during actuation
+to prevent feedback loops. A discovery command dumps the live control registry for authoring.</p>
+<h3>C. Scenario engine and conditions</h3>
+<p>A scenario is an ordered list of steps, each with a trigger and a command. Triggers are <code>wait</code>
+(relative), <code>at</code> (absolute), or <code>when</code> — a predicate over a periodically-broadcast telemetry
+stream (<code>alt_rel</code>, <code>groundspeed</code>, <code>current_wp</code>, …) with a timeout. Commands are any UI id, or
+high-level actions (e.g. set-current-waypoint) that have no single widget. This expresses flows such as
+"arm → take off → <i>when</i> alt&nbsp;≥&nbsp;500&nbsp;m → go to waypoint&nbsp;3 → enable search".</p>
+
+<h2>IV. Implementation</h2>
+<p>We implement the framework in <b>QGroundControl</b> (Qt/QML). Six base controls are instrumented; a
+singleton registry mediates broadcast/replay over a UDP bus (Tx <code>45678</code>, Rx <code>45679</code>). Telemetry
+is broadcast every 500&nbsp;ms per connected vehicle. An external <b>scenario studio</b> (Python) provides live
+control discovery, a telemetry read-out, step authoring, save/load and headless execution.</p>
+<table>
+  <tr><th>Base control</th><th>Recorded event</th><th>Replay actuation</th></tr>
+  <tr><td>Button</td><td>click</td><td>emit <code>clicked()</code></td></tr>
+  <tr><td>CheckBox / RadioButton</td><td>toggle</td><td>set <code>checked</code> + <code>clicked()</code></td></tr>
+  <tr><td>ComboBox</td><td>select</td><td>set <code>currentIndex</code> + <code>activated()</code></td></tr>
+  <tr><td>TextField</td><td>edit</td><td>set <code>text</code> + <code>editingFinished()</code></td></tr>
+  <tr><td>Slider</td><td>move</td><td>set <code>value</code> + <code>moved()</code></td></tr>
+</table>
+<div class="cap">Table&nbsp;I. Per-type capture and actuation.</div>
+
+<h2>V. Evaluation</h2>
+<p>We characterise the framework along four axes:</p>
+<table>
+  <tr><th>Metric</th><th>Definition</th><th>Result (this implementation)</th></tr>
+  <tr><td>Coverage — call sites</td><td>UI instances built on the 6 base controls</td><td>225 across the source tree</td></tr>
+  <tr><td>Coverage — live</td><td>controls auto-registered at start-up</td><td>~160 (no per-widget edits)</td></tr>
+  <tr><td>Instrumentation cost</td><td>files changed to achieve it</td><td>6 base-control files + 1 singleton</td></tr>
+  <tr><td>Replay fidelity</td><td>actuation reproduces the real handler</td><td>verified via side-channel echo</td></tr>
+  <tr><td>Condition latency</td><td>telemetry-to-action delay</td><td>bounded by 500&nbsp;ms broadcast + poll <span class="note">[measure]</span></td></tr>
+</table>
+<div class="cap">Table&nbsp;II. Evaluation axes and observed results.</div>
+<p class="note">Planned experiments: (a) round-trip test — record an operator session, replay, and compare
+resulting vehicle trajectory / UI state; (b) condition-trigger accuracy across thresholds; (c) coverage
+ratio vs. total interactive widgets; (d) authoring effort vs. manual MAVLink scripting.</p>
+
+<h2>VI. Discussion &amp; Limitations</h2>
+<p>Identifiers are label-derived and therefore change if UI text changes (mitigated by explicit ids on
+key controls); a control must be instantiated (its view opened) to be addressable; the approach assumes a
+toolkit with reusable base controls. It complements, rather than replaces, autopilot-level (MAVLink)
+scripting by capturing UI-only intent.</p>
+
+<h2>VII. Conclusion</h2>
+<p>By hooking a GCS at its base controls we obtain near-total, low-cost UI instrumentation that makes an
+otherwise manual, non-reproducible human-in-the-loop system into a recordable, replayable and
+conditionally scriptable one — enabling reproducible, telemetry-conditioned scenario automation for UAV
+ground control.</p>
+
+<hr>
+<p class="note"><b>Artifact.</b> Implemented on QGroundControl; scenario studio and manuals are provided with the
+source. <b>References.</b> [To be added.]</p>
+
+</body>
+</html>

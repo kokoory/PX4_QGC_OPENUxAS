@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 22mm 20mm; @bottom-center { content: counter(page); font-size: 9px; color:#888; } }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Serif CJK KR", "Nanum Myeongjo", "Batang", serif; font-size: 10.5pt; line-height: 1.65; color:#111; text-align: justify; word-break: keep-all; }
+  .title { font-size: 17pt; font-weight: bold; text-align:center; margin: 0 0 6pt; line-height:1.4; }
+  .subtitle { font-size: 12pt; text-align:center; color:#333; margin: 0 0 10pt; }
+  .authors { text-align:center; font-size: 10.5pt; margin: 6pt 0 2pt; }
+  .affil { text-align:center; font-size: 9pt; color:#333; font-style: italic; margin-bottom: 14pt; }
+  h2 { font-size: 12pt; margin: 15pt 0 5pt; }
+  h3 { font-size: 10.5pt; margin: 10pt 0 3pt; font-weight:bold; }
+  .abstract { font-size: 9.5pt; margin: 0 6mm; line-height:1.6; }
+  .abstract .h { font-weight: bold; }
+  .kw { font-size: 9.5pt; margin: 7pt 6mm 0; }
+  p { margin: 5pt 0; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; background:#f2f2f2; padding:0 3px; border-radius:2px; word-break: break-all; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 9pt; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; vertical-align: top; }
+  th { background:#eee; }
+  .cap { font-size: 8.5pt; text-align:center; color:#333; margin: 2pt 0 8pt; }
+  hr { border:none; border-top:1px solid #ccc; margin: 11pt 0; }
+  .note { font-size: 9pt; color:#555; }
+</style>
+</head>
+<body>
+
+<div class="title">지상통제소 UI의 기록·재생</div>
+<div class="subtitle">재현 가능한 텔레메트리 조건 기반 시나리오 자동화를 위한 전역 이벤트 후킹</div>
+<div class="authors">저자명</div>
+<div class="affil">소속 · 이메일 · 2026</div>
+
+<div class="abstract">
+<span class="h">요약—</span>
+무인기(UAV)의 지상통제소(GCS)는 그래픽 사용자 인터페이스(UI)를 통해 운용되는 인간 개입(human-in-the-loop)
+시스템이다. 운용자는 시동, 미션 편집, 비행모드 전환, 유도 명령을 모두 손으로 UI에서 수행한다. 이러한 수작업·
+UI 매개적 특성은 임무 수준 시나리오의 <span class="h">시험·시연·재현</span>을 어렵게 만든다. 동일한 조작 순서를 사람이
+매번 다시 수행해야 하며, 시간이나 상태에 의존하는 동작(예: "비행체가 고도 500&nbsp;m를 넘으면 3번 항로점으로 이동")은
+아예 표현할 수 없다. 본 논문은 <span class="h">수정하지 않은 GCS UI를 스크립트 가능한 기록·재생 표면으로 전환</span>하는
+프레임워크를 제안한다. 개별 위젯을 일일이 계측하는 대신, 애플리케이션 전체가 공유하는 소수의 <span class="h">베이스
+컨트롤</span>에 후킹을 삽입하여, 모든 버튼·체크박스·콤보박스·텍스트필드·라디오버튼·슬라이더가 (i) 각 상호작용을
+구조화된 이벤트로 방송하고 (ii) 외부 명령으로 사람이 클릭한 것과 동일하게 작동하도록 한다. 이 이벤트 버스 위에
+시간 트리거(상대·절대 시각)와 실시간 차량 상태 스트림에 대해 평가되는 <span class="h">텔레메트리 조건 트리거</span>를
+지원하는 시나리오 엔진을 구축하여, 운용자가 임무 전체를 처음부터 끝까지 작성·저장·재생할 수 있게 한다. 본
+프레임워크를 QGroundControl에 UDP 이벤트 버스 형태로 구현하였으며, <span class="h">6개의 계측된 베이스 컨트롤이
+애플리케이션 전역 225개 UI 사용처를 포괄</span>하고 시작 시점에 약 160개의 컨트롤이 위젯별 코드 수정 없이 자동
+등록됨을 보인다. 왕복 재생은 녹화된 운용 세션을 재현하며, 텔레메트리 조건은 임무 동작을 자율적으로 발화시킨다.
+그 결과, 회귀 시험·시연·시나리오 기반 평가에 적합한, <span class="h">재현 가능하고 조건에 의해 발화되는 UAV GCS
+자동화</span>를 달성한다.
+</div>
+<div class="kw"><span class="h">주제어—</span> 지상통제소, 무인기, 기록·재생, UI 계측, 이벤트 후킹, 시나리오 기반 시험, 텔레메트리 조건 트리거, 재현성, 인간 개입 시스템.</div>
+
+<hr>
+
+<h2>I. 서론</h2>
+<p><b>연구 동기.</b> GCS는 전적으로 UI를 통해 운용되므로, UAV 임무를 시험하거나 시연하는 것은 곧 사람이 클릭을
+반복하는 일이다. 이는 (a) <i>재현 불가</i>—실행마다 타이밍과 순서가 달라짐, (b) <i>스크립트 불가</i>—상태 의존
+동작을 표현할 방법이 없음, (c) <i>노동 집약적</i>—다수의 차량·임무 구성에 걸친 회귀 시험이 어려움, 이라는 한계를
+가진다.</p>
+<p><b>문제 정의.</b> 기존 GCS UI를 침습적인 위젯별 수정 없이 <i>완전히 기록·재생 가능</i>하고 <i>조건부로 스크립트
+가능</i>하게 만들 수 있는가?</p>
+<p><b>기여.</b> (1) 재사용 베이스 위젯만 수정하여 GCS 전체를 계측하는 <i>베이스 컨트롤 이벤트 후킹</i> 기법—최소한의
+비충돌 변경으로 거의 완전한 UI 포괄을 달성한다. (2) 상호작용을 방송하는 동시에 실제 작동으로 재생하는 양방향
+<i>이벤트 버스</i>—에코 억제 가드를 포함한다. (3) 시간 및 텔레메트리 조건 트리거를 갖춘 <i>시나리오 엔진</i>과 실시간
+컨트롤 탐색·작성 도구. (4) QGroundControl 구현 및 포괄성·재생 충실도에 대한 실증적 특성화.</p>
+
+<h2>II. 관련 연구</h2>
+<p>GUI 기록·재생 및 캡처/재생 시험(좌표·위젯·이벤트 수준), 모델 기반 및 시나리오 기반 시험, 소프트웨어/하드웨어
+인더루프 UAV 시뮬레이션(PX4 SITL, MAVSDK 스크립팅) 등이 관련된다. 기존 GCS 자동화는 대체로 MAVLink를 통해
+<i>비행제어기</i>를 직접 구동하여 운용자 UI를 우회한다. 반면 본 연구는 <i>UI 자체</i>를 자동화하여, 차량에 전달되지
+않는 UI 전용 상태까지 포함해 사람이 하는 조작을 그대로 포착한다. <span class="note">[인용 보강 필요]</span></p>
+
+<h2>III. 접근 방법</h2>
+<h3>A. 베이스 컨트롤 계측</h3>
+<p>위젯 툴킷 기반 GCS는 거의 모든 상호작용을 소수의 양식화된 베이스 컨트롤로 통과시킨다. 본 연구는 각 베이스
+컨트롤에 비침습적 관찰자(애플리케이션 자체 핸들러를 <i>대체하지 않고 함께</i> 발화하는 신호 연결)와 생명주기 등록을
+부착한다. 각 컨트롤은 명시적 식별자, 없으면 객체명, 없으면 타입과 라벨로부터 안정적이고 사람이 읽을 수 있는
+식별자를 도출하며, 중복 시 순번 접미사로 구분한다.</p>
+<h3>B. 양방향 이벤트 버스</h3>
+<p>상호작용은 <code>{id,type,value}</code>를 담아 방송 채널(<code>ui</code>)로 방출된다. 인바운드 명령
+<code>{action:"ui",id,value}</code>는 레지스트리에서 컨트롤을 찾아 고유 신호를 재발화함으로써 사용자 동작의 효과를
+정확히 재현한다. 재생 가드는 작동 중 재방송을 억제하여 되먹임 루프를 방지한다. 탐색 명령은 작성을 위해 실시간
+컨트롤 레지스트리를 덤프한다.</p>
+<h3>C. 시나리오 엔진과 조건</h3>
+<p>시나리오는 트리거와 명령을 갖는 순서화된 스텝의 목록이다. 트리거는 <code>wait</code>(상대), <code>at</code>(절대),
+또는 <code>when</code>—주기적으로 방송되는 텔레메트리 스트림(<code>alt_rel</code>, <code>groundspeed</code>,
+<code>current_wp</code> 등)에 대한 술어(타임아웃 포함)—이다. 명령은 임의의 UI 식별자이거나, 단일 위젯이 없는 고수준
+동작(예: 현재 항로점 설정)일 수 있다. 이를 통해 "시동 → 이륙 → <i>고도 ≥ 500&nbsp;m가 되면</i> → 3번 항로점 이동 →
+검색 활성화"와 같은 흐름을 표현한다.</p>
+
+<h2>IV. 구현</h2>
+<p>본 프레임워크를 <b>QGroundControl</b>(Qt/QML)에 구현하였다. 6개의 베이스 컨트롤을 계측하였고, 싱글톤
+레지스트리가 UDP 버스(송신 <code>45678</code>, 수신 <code>45679</code>)를 통해 방송·재생을 중개한다. 텔레메트리는 연결된
+차량별로 500&nbsp;ms마다 방송된다. 외부 <b>시나리오 스튜디오</b>(Python)는 실시간 컨트롤 탐색, 텔레메트리 표시, 스텝
+작성, 저장/불러오기, 헤드리스 실행을 제공한다.</p>
+<table>
+  <tr><th>베이스 컨트롤</th><th>녹화 이벤트</th><th>재생 작동</th></tr>
+  <tr><td>Button</td><td>클릭</td><td><code>clicked()</code> 발생</td></tr>
+  <tr><td>CheckBox / RadioButton</td><td>토글</td><td><code>checked</code> 설정 + <code>clicked()</code></td></tr>
+  <tr><td>ComboBox</td><td>선택</td><td><code>currentIndex</code> 설정 + <code>activated()</code></td></tr>
+  <tr><td>TextField</td><td>입력</td><td><code>text</code> 설정 + <code>editingFinished()</code></td></tr>
+  <tr><td>Slider</td><td>이동</td><td><code>value</code> 설정 + <code>moved()</code></td></tr>
+</table>
+<div class="cap">표&nbsp;I. 타입별 캡처 및 재생 작동.</div>
+
+<h2>V. 평가</h2>
+<p>본 프레임워크를 네 축으로 특성화한다.</p>
+<table>
+  <tr><th>지표</th><th>정의</th><th>결과(본 구현)</th></tr>
+  <tr><td>포괄성 — 사용처</td><td>6개 베이스 컨트롤로 만들어진 UI 인스턴스</td><td>소스 트리 전역 225개</td></tr>
+  <tr><td>포괄성 — 실시간</td><td>시작 시 자동 등록된 컨트롤</td><td>약 160개(위젯별 수정 없음)</td></tr>
+  <tr><td>계측 비용</td><td>이를 위해 변경한 파일 수</td><td>베이스 컨트롤 6개 + 싱글톤 1개</td></tr>
+  <tr><td>재생 충실도</td><td>작동이 실제 핸들러를 재현하는가</td><td>부채널 에코로 검증됨</td></tr>
+  <tr><td>조건 지연</td><td>텔레메트리→동작 지연</td><td>500&nbsp;ms 방송 + 폴링으로 상한 <span class="note">[측정 예정]</span></td></tr>
+</table>
+<div class="cap">표&nbsp;II. 평가 축과 관측 결과.</div>
+<p class="note">향후 실험: (a) 왕복 시험—운용 세션을 녹화·재생하고 결과 차량 궤적/UI 상태를 비교; (b) 임계값별 조건
+트리거 정확도; (c) 전체 상호작용 위젯 대비 포괄 비율; (d) 수작업 MAVLink 스크립팅 대비 작성 노력.</p>
+
+<h2>VI. 논의 및 한계</h2>
+<p>식별자가 라벨 기반이므로 UI 문구가 바뀌면 식별자도 변한다(핵심 컨트롤에 명시적 식별자를 부여하여 완화). 컨트롤은
+인스턴스화되어야(해당 뷰가 열려야) 주소지정 가능하다. 본 기법은 재사용 베이스 컨트롤을 갖춘 툴킷을 전제로 한다. 또한
+UI 전용 의도를 포착함으로써 비행제어기 수준(MAVLink) 스크립팅을 대체하기보다 <i>보완</i>한다.</p>
+
+<h2>VII. 결론</h2>
+<p>GCS를 베이스 컨트롤 수준에서 후킹함으로써, 저비용으로 거의 완전한 UI 계측을 얻고, 본래 수작업이며 재현
+불가능하던 인간 개입 시스템을 기록·재생 가능하고 조건부로 스크립트 가능한 시스템으로 전환한다. 이로써 UAV 지상
+통제를 위한 재현 가능하고 텔레메트리 조건에 의해 발화되는 시나리오 자동화를 실현한다.</p>
+
+<hr>
+<p class="note"><b>산출물.</b> QGroundControl 상에 구현하였으며, 시나리오 스튜디오와 설명서를 소스와 함께 제공한다.
+<b>참고문헌.</b> [추가 예정.]</p>
+
+</body>
+</html>
