@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 20mm 18mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 9px; color: #888; } }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Sans CJK KR", "DejaVu Sans", sans-serif; font-size: 10.5px; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 22px; color: #0b5; border-bottom: 3px solid #0b5; padding-bottom: 6px; margin: 0 0 4px; }
+  h2 { font-size: 15px; color: #084; margin: 18px 0 6px; border-left: 4px solid #0b5; padding-left: 8px; }
+  h3 { font-size: 12px; color: #063; margin: 12px 0 4px; }
+  .sub { color: #666; font-size: 11px; margin-bottom: 14px; }
+  code, pre { font-family: "DejaVu Sans Mono", monospace; }
+  code { background: #f0f4f0; padding: 1px 4px; border-radius: 3px; font-size: 9.5px; color: #063; }
+  pre { background: #1e2a22; color: #d6f5e2; padding: 10px 12px; border-radius: 5px; font-size: 9px; line-height: 1.45; overflow-x: auto; white-space: pre-wrap; }
+  pre .k { color: #7fd1a0; } pre .s { color: #f0c674; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 9.5px; }
+  th, td { border: 1px solid #cdd; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8f5ee; color: #063; }
+  tr:nth-child(even) td { background: #f7fbf8; }
+  .note { background: #fff8e6; border-left: 4px solid #e8b73a; padding: 7px 10px; margin: 8px 0; font-size: 9.5px; border-radius: 0 4px 4px 0; }
+  .ok { background: #e9f7ee; border-left: 4px solid #0b5; padding: 7px 10px; margin: 8px 0; font-size: 9.5px; border-radius: 0 4px 4px 0; }
+  .flow { text-align: center; font-size: 10px; color: #063; margin: 6px 0; }
+  .flow b { color: #0b5; }
+  ul { margin: 4px 0 8px; padding-left: 18px; } li { margin: 2px 0; }
+  .port { display: inline-block; background: #063; color: #fff; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<h1>QGC UI 스크립팅 — 전역 녹화 · 재생 · 시나리오</h1>
+<div class="sub">QGroundControl + OpenUxAS · EventBroadcaster 기반 · 2026-07 · Add3Dmap</div>
+
+<p>QGC의 <b>모든 UI</b>를 외부에서 녹화·재생·자동조작하기 위한 시스템 설명서다. 사람이 버튼을 누르는 것과 동일하게, 외부 프로그램이 시간·조건에 따라 QGC 전체를 처음부터 끝까지 구동한다.</p>
+
+<h2>1. 구성 한눈에</h2>
+<div class="flow">
+  <b>외부 시나리오</b> &nbsp;──<span class="port">45679</span>──▶&nbsp; <b>QGC (UIScript 후킹)</b> &nbsp;──▶ 실제 버튼 작동 &nbsp;──▶ 차량<br>
+  <b>QGC</b> &nbsp;──<span class="port">45678</span>──▶&nbsp; ui / uxas_ui / telemetry 방송 &nbsp;──▶ <b>녹화 · 조건평가</b>
+</div>
+<table>
+  <tr><th>포트</th><th>방향</th><th>내용</th></tr>
+  <tr><td><span class="port">45678</span></td><td>QGC → 외부</td><td>모든 UI 이벤트(<code>ui</code>), 패널(<code>uxas_ui</code>), 텔레메트리(<code>telemetry</code>), 컨트롤 목록(<code>ui_registry</code>)</td></tr>
+  <tr><td><span class="port">45679</span></td><td>외부 → QGC</td><td>UI 조작 명령, 고수준 명령(웨이포인트 이동 등)</td></tr>
+</table>
+
+<h2>2. 전역 UI 후킹 (QGC 내부)</h2>
+<p>QGC의 거의 모든 화면은 6개 <b>베이스 컨트롤</b>로 만들어진다. 그 베이스에 후킹을 넣어 <b>앱 전체</b>가 자동으로 녹화·재생 가능해진다. (부팅 직후 실측 <b>약 160개 컨트롤 자동 등록</b>.)</p>
+<table>
+  <tr><th>컨트롤</th><th>타입</th><th>녹화 이벤트</th><th>재생 동작</th></tr>
+  <tr><td>QGCButton</td><td><code>button</code></td><td>클릭</td><td><code>clicked()</code> 발생</td></tr>
+  <tr><td>QGCCheckBox</td><td><code>checkbox</code></td><td>체크/해제</td><td><code>checked</code> 설정 + <code>clicked()</code></td></tr>
+  <tr><td>QGCRadioButton</td><td><code>radio</code></td><td>선택</td><td><code>checked</code> 설정 + <code>clicked()</code></td></tr>
+  <tr><td>QGCComboBox</td><td><code>combobox</code></td><td>항목 선택</td><td><code>currentIndex</code> 설정 + <code>activated()</code></td></tr>
+  <tr><td>QGCTextField</td><td><code>textfield</code></td><td>입력 완료</td><td><code>text</code> 설정 + <code>editingFinished()</code></td></tr>
+  <tr><td>QGCSlider</td><td><code>slider</code></td><td>값 이동</td><td><code>value</code> 설정 + <code>moved()</code></td></tr>
+</table>
+<div class="ok"><b>검증 완료</b> — 외부에서 <code>{"action":"ui","id":"checkbox:Camera coverage (green)","value":true}</code> 전송 → QGC가 그 체크박스를 실제로 눌러 패널 핸들러 실행 확인.</div>
+
+<h3>컨트롤 id 규칙</h3>
+<ul>
+  <li>명시적 <code>uiId</code>가 있으면 그것 (가장 안정적)</li>
+  <li>없으면 <code>objectName</code></li>
+  <li>없으면 <code>&lt;타입&gt;:&lt;텍스트/라벨&gt;</code> — 예: <code>button:Arm</code>, <code>checkbox:River</code></li>
+  <li>같은 라벨이 여럿이면 <code>#1</code>, <code>#2</code> 접미사</li>
+  <li>콤보박스는 텍스트가 없어 <b>현재 선택 텍스트</b>로 라벨 (예 <code>combobox:Multi-Rotor</code>). 시나리오 핵심 콤보엔 명시적 <code>uiId</code> 부여됨: <code>ux_sensor_combo</code>, <code>ux_region_shape_combo</code>, <code>ux_river_mode_combo</code></li>
+</ul>
+<div class="note"><b>주의</b> — id는 UI 텍스트 기반이라 <b>화면 문구가 바뀌면 id도 바뀐다</b>. 뷰가 로드되어 있어야 그 컨트롤이 등록된다(예: Plan 뷰 버튼은 Plan 뷰를 한 번 열어야 목록에 뜸).</div>
+
+<h2>3. 외부 시나리오 프로그램 <code>ui_scenario_studio.py</code></h2>
+<pre><span class="k"># GUI (팔레트 + 텔레메트리 + 스텝 편집 + 실행)</span>
+python3 ui_scenario_studio.py
+
+<span class="k"># 저장한 시나리오 헤드리스 실행</span>
+python3 ui_scenario_studio.py --run scenario.json
+python3 ui_scenario_studio.py --run scenario.json --dry-run</pre>
+<p><b>GUI 기능</b>: 왼쪽에 QGC가 방송하는 <b>모든 컨트롤 팔레트</b>(검색·Refresh)와 실시간 텔레메트리, 오른쪽에 스텝 목록·편집·Save/Load·Run/Stop. 팔레트 항목을 고르면 그 id가 명령에 자동 입력된다. "Refresh"는 QGC에 <code>__dump__</code>를 보내 현재 등록된 전 컨트롤을 받아온다.</p>
+
+<h2>4. 시나리오 파일 형식</h2>
+<pre>{
+  <span class="s">"name"</span>: <span class="s">"SAR 전체 임무"</span>,
+  <span class="s">"steps"</span>: [
+    {<span class="s">"wait"</span>: 2,  <span class="s">"cmd"</span>: {<span class="s">"action"</span>:<span class="s">"ui"</span>, <span class="s">"id"</span>:<span class="s">"button:Arm"</span>}},
+    {<span class="s">"at"</span>: 10,  <span class="s">"cmd"</span>: {<span class="s">"action"</span>:<span class="s">"ui"</span>, <span class="s">"id"</span>:<span class="s">"ux_sensor_combo"</span>, <span class="s">"value"</span>:2}},
+    {<span class="s">"when"</span>: {<span class="s">"vehicle"</span>:1, <span class="s">"field"</span>:<span class="s">"alt_rel"</span>, <span class="s">"op"</span>:<span class="s">"&gt;="</span>, <span class="s">"value"</span>:500},
+     <span class="s">"timeout"</span>: 120,
+     <span class="s">"cmd"</span>: {<span class="s">"action"</span>:<span class="s">"set_current_wp"</span>, <span class="s">"index"</span>:3}},
+    {<span class="s">"wait"</span>: 0,  <span class="s">"cmd"</span>: {<span class="s">"action"</span>:<span class="s">"ui"</span>, <span class="s">"id"</span>:<span class="s">"checkbox:River"</span>, <span class="s">"value"</span>:true}}
+  ]
+}</pre>
+
+<h3>트리거 (스텝마다 하나)</h3>
+<table>
+  <tr><th>키</th><th>의미</th></tr>
+  <tr><td><code>"wait": s</code></td><td>이전 스텝 후 s초 대기</td></tr>
+  <tr><td><code>"at": s</code></td><td>시나리오 시작 후 s초 시점에 실행</td></tr>
+  <tr><td><code>"when": {…}</code></td><td>텔레메트리 조건 충족까지 대기 후 실행. <code>timeout</code>(초, 기본 300) 초과 시 그 스텝 건너뜀</td></tr>
+</table>
+<h3>조건(<code>when</code>) 필드</h3>
+<p><code>vehicle</code>(id), <code>field</code>, <code>op</code>(<code>&gt;= &lt;= &gt; &lt; == !=</code>), <code>value</code>. 사용 가능 <code>field</code>: <code>alt_rel</code>, <code>alt_amsl</code>, <code>groundspeed</code>, <code>heading</code>, <code>current_wp</code>, <code>lat</code>, <code>lon</code> (QGC가 <span class="port">45678</span>로 500ms마다 방송).</p>
+
+<h3>명령(<code>cmd</code>) — 45679로 그대로 전송</h3>
+<table>
+  <tr><th>형태</th><th>예</th></tr>
+  <tr><td>UI 컨트롤 조작</td><td><code>{"action":"ui","id":"&lt;id&gt;","value":&lt;값&gt;}</code></td></tr>
+  <tr><td>웨이포인트 N 이동</td><td><code>{"action":"set_current_wp","index":3}</code></td></tr>
+  <tr><td>활성 차량 선택</td><td><code>{"action":"select_vehicle","vehicleId":4}</code></td></tr>
+  <tr><td>가이드 액션</td><td><code>{"action":"rtl"}</code>, <code>{"action":"takeoff","altitude":40}</code></td></tr>
+  <tr><td>UxAS 패널</td><td><code>{"action":"ux_publish_sar"}</code>, <code>{"action":"ux_river_mode","mode":"center"}</code></td></tr>
+</table>
+
+<h2>5. 대표 예시 — 조건부 SAR</h2>
+<p>"이륙 → 500m 도달하면 3번 웨이포인트로 이동 → 강 검색 켜기"</p>
+<pre>{
+  <span class="s">"name"</span>: <span class="s">"조건부 강 검색"</span>,
+  <span class="s">"steps"</span>: [
+    {<span class="s">"wait"</span>: 1, <span class="s">"cmd"</span>:{<span class="s">"action"</span>:<span class="s">"ui"</span>,<span class="s">"id"</span>:<span class="s">"button:Arm"</span>}},
+    {<span class="s">"wait"</span>: 3, <span class="s">"cmd"</span>:{<span class="s">"action"</span>:<span class="s">"takeoff"</span>,<span class="s">"altitude"</span>:60}},
+    {<span class="s">"when"</span>:{<span class="s">"vehicle"</span>:1,<span class="s">"field"</span>:<span class="s">"alt_rel"</span>,<span class="s">"op"</span>:<span class="s">"&gt;="</span>,<span class="s">"value"</span>:500},
+     <span class="s">"cmd"</span>:{<span class="s">"action"</span>:<span class="s">"set_current_wp"</span>,<span class="s">"index"</span>:3}},
+    {<span class="s">"wait"</span>: 0, <span class="s">"cmd"</span>:{<span class="s">"action"</span>:<span class="s">"ui"</span>,<span class="s">"id"</span>:<span class="s">"ux_river_mode_combo"</span>,<span class="s">"value"</span>:0}},
+    {<span class="s">"wait"</span>: 0, <span class="s">"cmd"</span>:{<span class="s">"action"</span>:<span class="s">"ux_publish"</span>}}
+  ]
+}</pre>
+
+<h2>6. 녹화 → 재생 워크플로</h2>
+<div class="flow"><b>녹화</b> <code>eb_monitor_gui.py</code> 로 방송 관찰·Save &nbsp;──▶&nbsp; <b>편집</b> studio에서 조건 추가 &nbsp;──▶&nbsp; <b>재생</b> <code>--run</code></div>
+<ul>
+  <li><code>eb_monitor_gui.py</code> — 45678 방송을 시간순 GUI로 보며 녹화(Save)</li>
+  <li><code>eb_replay.py</code> — 녹화 파일 원래 타이밍대로 재생</li>
+  <li><code>ui_scenario_studio.py</code> — 손으로 시나리오 작성 + 조건/시간 + 실행</li>
+</ul>
+
+<div class="note"><b>실행 순서</b> — ① QGC 실행(EventBroadcaster <span class="port">45678</span>/<span class="port">45679</span> 자동 개방) ② (조건 쓰려면) 차량 연결로 텔레메트리 방송 ③ <code>ui_scenario_studio.py</code> 실행. 조작하려는 컨트롤이 속한 뷰를 미리 한 번 열어 등록되게 할 것.</div>
+
+</body>
+</html>
