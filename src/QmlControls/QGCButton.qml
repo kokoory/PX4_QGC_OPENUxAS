@@ -23,6 +23,16 @@ Button {
     property alias textColor: text.color
 
     id: control
+    // --- UIScript record/replay hook (see UIScript.qml) ---
+    property string uiId: ""         // optional explicit stable id
+    property string uiScriptId: ""   // resolved id (set on registration)
+    Connections {
+        target: control
+        ignoreUnknownSignals: true
+        Component.onCompleted:   control.uiScriptId = UIScript.register(control, "button", control.uiId)
+        Component.onDestruction: UIScript.unregister(control.uiScriptId)
+        function onClicked() { UIScript.captured(control, "button", "click") }
+    }
     hoverEnabled: !ScreenTools.isMobile
     topPadding: _verticalPadding
     bottomPadding: _verticalPadding

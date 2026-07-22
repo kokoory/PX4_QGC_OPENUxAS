@@ -6,6 +6,16 @@ import QGroundControl.Controls
 
 CheckBox {
     id:             control
+    // --- UIScript record/replay hook ---
+    property string uiId: ""
+    property string uiScriptId: ""
+    Connections {
+        target: control
+        ignoreUnknownSignals: true
+        Component.onCompleted:   control.uiScriptId = UIScript.register(control, "checkbox", control.uiId)
+        Component.onDestruction: UIScript.unregister(control.uiScriptId)
+        function onClicked() { UIScript.captured(control, "checkbox", "click") }
+    }
     spacing:        _noText ? 0 : ScreenTools.defaultFontPixelWidth
     focusPolicy:    Qt.ClickFocus
     leftPadding:    0

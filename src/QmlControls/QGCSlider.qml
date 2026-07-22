@@ -10,6 +10,16 @@ Slider {
     property bool showBoundaryValues: false ///< true: Show min/max values at slider ends
 
     id: control
+    // --- UIScript record/replay hook ---
+    property string uiId: ""
+    property string uiScriptId: ""
+    Connections {
+        target: control
+        ignoreUnknownSignals: true
+        Component.onCompleted:   control.uiScriptId = UIScript.register(control, "slider", control.uiId)
+        Component.onDestruction: UIScript.unregister(control.uiScriptId)
+        function onMoved() { UIScript.captured(control, "slider", "change") }
+    }
     implicitHeight: ScreenTools.implicitSliderHeight + (showBoundaryValues ? minLabel.contentHeight : 0)
     leftPadding: 0
     rightPadding: 0

@@ -11,6 +11,16 @@ T.ComboBox {
     property string alternateText: ""
 
     id: control
+    // --- UIScript record/replay hook ---
+    property string uiId: ""
+    property string uiScriptId: ""
+    Connections {
+        target: control
+        ignoreUnknownSignals: true
+        Component.onCompleted:   control.uiScriptId = UIScript.register(control, "combobox", control.uiId)
+        Component.onDestruction: UIScript.unregister(control.uiScriptId)
+        function onActivated(index) { UIScript.captured(control, "combobox", "change") }
+    }
     padding: ScreenTools.comboBoxPadding
     spacing: ScreenTools.defaultFontPixelWidth
     font.pointSize: ScreenTools.defaultFontPointSize

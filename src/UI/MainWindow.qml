@@ -30,6 +30,56 @@ ApplicationWindow {
         window: mainWindow
     }
 
+    // --- Scenario support: broadcast every vehicle's telemetry so an external
+    // scenario runner can evaluate conditions (e.g. "when alt_rel >= 500 → go to
+    // waypoint N"). Emitted on the EventBroadcaster "telemetry" channel. ---
+    Timer {
+        interval:   500
+        running:    true
+        repeat:     true
+        onTriggered: {
+            var vl = QGroundControl.multiVehicleManager.vehicles
+            if (!vl) return
+            for (var i = 0; i < vl.count; i++) {
+                var v = vl.get(i)
+                if (!v) continue
+                EventBroadcaster.sendEvent("telemetry", "state", {
+                    "vehicleId":   v.id,
+                    "armed":       v.armed,
+                    "flying":      v.flying,
+                    "mode":        v.flightMode,
+                    "alt_rel":     v.altitudeRelative.rawValue,
+                    "alt_amsl":    v.altitudeAMSL.rawValue,
+                    "lat":         v.coordinate.latitude,
+                    "lon":         v.coordinate.longitude,
+                    "heading":     v.heading.rawValue,
+                    "groundspeed": v.groundSpeed.rawValue,
+                    "current_wp":  (v.missionManager ? v.missionManager.currentIndex : -1)
+                })
+            }
+        }
+    }
+
+    // High-level scenario commands that have no single UI control.
+    Connections {
+        target: EventBroadcaster
+        function onCommandReceived(action, params) {
+            var mvm = QGroundControl.multiVehicleManager
+            if (action === "set_current_wp") {
+                var v = mvm.activeVehicle
+                if (v && params && params["index"] !== undefined) v.setCurrentMissionSequence(Number(params["index"]))
+            } else if (action === "select_vehicle") {
+                if (params && params["vehicleId"] !== undefined) {
+                    var want = Number(params["vehicleId"])
+                    var vl = mvm.vehicles
+                    for (var i = 0; vl && i < vl.count; i++) {
+                        if (vl.get(i) && vl.get(i).id === want) { mvm.activeVehicle = vl.get(i); break }
+                    }
+                }
+            }
+        }
+    }
+
     QtObject {
         id: firstRunPromptManager
 

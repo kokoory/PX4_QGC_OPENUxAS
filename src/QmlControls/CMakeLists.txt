@@ -80,6 +80,9 @@ qt_add_library(QGroundControlControlsModule STATIC)
 set_source_files_properties(ScreenTools.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
 )
+set_source_files_properties(UIScript.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
 
 qt_add_qml_module(QGroundControlControlsModule
     URI QGroundControl.Controls
@@ -189,6 +192,7 @@ qt_add_qml_module(QGroundControlControlsModule
 # fails, so this file is kept in this module until a better solution is available.
 
         ScreenTools.qml
+        UIScript.qml
     NO_PLUGIN
 )
 

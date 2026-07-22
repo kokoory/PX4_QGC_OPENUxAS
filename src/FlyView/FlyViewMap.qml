@@ -1749,6 +1749,7 @@ FlightMap {
                 QGCLabel { text: qsTr("Sensor"); anchors.verticalCenter: parent.verticalCenter }
                 QGCComboBox {
                     id:             uxSensorCombo
+                    uiId:           "ux_sensor_combo"
                     width:          ScreenTools.defaultFontPixelWidth * 13
                     model:          [ qsTr("Wide (45°)"), qsTr("Detail (20°)"), qsTr("Custom") ]
                     currentIndex:   _root._uxFovDeg === 45 ? 0 : (_root._uxFovDeg === 20 ? 1 : 2)
@@ -1811,6 +1812,7 @@ FlightMap {
                     spacing:    ScreenTools.defaultFontPixelWidth * 0.4
                     QGCLabel { text: qsTr("Region"); anchors.verticalCenter: parent.verticalCenter }
                     QGCComboBox {
+                        uiId:           "ux_region_shape_combo"
                         width:          ScreenTools.defaultFontPixelWidth * 16
                         model:          [ qsTr("Rectangle"), qsTr("Polygon (draw)") ]
                         currentIndex:   _root._uxShape === "poly" ? 1 : 0
@@ -1961,6 +1963,7 @@ FlightMap {
                     spacing:    ScreenTools.defaultFontPixelWidth * 0.4
                     QGCLabel { text: qsTr("River"); anchors.verticalCenter: parent.verticalCenter }
                     QGCComboBox {
+                        uiId:           "ux_river_mode_combo"
                         width:          ScreenTools.defaultFontPixelWidth * 20
                         model:          [ qsTr("Centerline (line)"), qsTr("Riverbank (line)"), qsTr("Area (lawnmower)") ]
                         currentIndex:   _root._uxRiverMode === "bank" ? 1 : (_root._uxRiverMode === "area" ? 2 : 0)

@@ -7,6 +7,16 @@ import QGroundControl.Controls
 
 TextField {
     id:                 control
+    // --- UIScript record/replay hook ---
+    property string uiId: ""
+    property string uiScriptId: ""
+    Connections {
+        target: control
+        ignoreUnknownSignals: true
+        Component.onCompleted:   control.uiScriptId = UIScript.register(control, "textfield", control.uiId)
+        Component.onDestruction: UIScript.unregister(control.uiScriptId)
+        function onEditingFinished() { UIScript.captured(control, "textfield", "change") }
+    }
     color:              qgcPal.textFieldText
     selectionColor:     qgcPal.textFieldText
     selectedTextColor:  qgcPal.textField
