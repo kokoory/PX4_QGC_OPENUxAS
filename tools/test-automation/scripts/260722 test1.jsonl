@@ -1,0 +1,53 @@
+{"category": "view", "event": "plan_view", "seq": 334, "timestamp": 1784725678.163}
+{"category": "view", "event": "fly_view", "seq": 335, "timestamp": 1784725683.406}
+{"category": "view", "event": "analyze_view", "seq": 336, "timestamp": 1784725687.367}
+{"category": "view", "event": "configure_view", "seq": 337, "timestamp": 1784725689.106}
+{"category": "view", "event": "settings_view", "seq": 338, "timestamp": 1784725691.259}
+{"category": "view", "event": "plan_view", "seq": 339, "timestamp": 1784725692.375}
+{"category": "ui", "data": {"id": "combobox:PX4 Pro", "type": "combobox", "value": 1}, "event": "change", "seq": 340, "timestamp": 1784725699.202}
+{"category": "ui", "data": {"id": "combobox:Multi-Rotor", "type": "combobox", "value": 0}, "event": "change", "seq": 341, "timestamp": 1784725705.779}
+{"category": "qgc_mission", "data": {"index": 1, "lat": 37.50806381, "lon": 127.02472706, "seq": 1}, "event": "waypoint_add", "seq": 342, "timestamp": 1784725720.103}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 53.34}, "event": "change", "seq": 343, "timestamp": 1784725727.749}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 53.975}, "event": "change", "seq": 344, "timestamp": 1784725727.8}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 54.61000000000001}, "event": "change", "seq": 345, "timestamp": 1784725727.823}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 55.245}, "event": "change", "seq": 346, "timestamp": 1784725727.83}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 55.879999999999995}, "event": "change", "seq": 347, "timestamp": 1784725727.838}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 56.515}, "event": "change", "seq": 348, "timestamp": 1784725727.845}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 59.69}, "event": "change", "seq": 349, "timestamp": 1784725727.876}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 60.96}, "event": "change", "seq": 350, "timestamp": 1784725727.883}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 61.595000000000006}, "event": "change", "seq": 351, "timestamp": 1784725727.89}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 62.865}, "event": "change", "seq": 352, "timestamp": 1784725727.913}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 64.13499999999999}, "event": "change", "seq": 353, "timestamp": 1784725727.92}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 65.405}, "event": "change", "seq": 354, "timestamp": 1784725727.928}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 66.03999999999999}, "event": "change", "seq": 355, "timestamp": 1784725727.935}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 66.675}, "event": "change", "seq": 356, "timestamp": 1784725727.943}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 67.31}, "event": "change", "seq": 357, "timestamp": 1784725727.958}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 67.945}, "event": "change", "seq": 358, "timestamp": 1784725727.965}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 68.58}, "event": "change", "seq": 359, "timestamp": 1784725727.98}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 69.215}, "event": "change", "seq": 360, "timestamp": 1784725727.988}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 69.85}, "event": "change", "seq": 361, "timestamp": 1784725727.995}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 70.485}, "event": "change", "seq": 362, "timestamp": 1784725728.003}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 71.12}, "event": "change", "seq": 363, "timestamp": 1784725728.025}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 71.755}, "event": "change", "seq": 364, "timestamp": 1784725728.033}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 73.025}, "event": "change", "seq": 365, "timestamp": 1784725728.04}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 73.66}, "event": "change", "seq": 366, "timestamp": 1784725728.055}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 74.295}, "event": "change", "seq": 367, "timestamp": 1784725728.078}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 74.93}, "event": "change", "seq": 368, "timestamp": 1784725728.115}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 75.565}, "event": "change", "seq": 369, "timestamp": 1784725728.138}
+{"category": "ui", "data": {"id": "slider:#5", "type": "slider", "value": 76.2}, "event": "change", "seq": 370, "timestamp": 1784725728.16}
+{"category": "ui", "data": {"id": "checkbox:Flight Speed#1", "text": "Flight Speed", "type": "checkbox", "value": true}, "event": "click", "seq": 371, "timestamp": 1784725734.319}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 14.53125}, "event": "change", "seq": 372, "timestamp": 1784725735.588}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 14.21875}, "event": "change", "seq": 373, "timestamp": 1784725735.699}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 14.0625}, "event": "change", "seq": 374, "timestamp": 1784725735.706}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 13.75}, "event": "change", "seq": 375, "timestamp": 1784725735.714}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 13.4375}, "event": "change", "seq": 376, "timestamp": 1784725735.721}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 13.28125}, "event": "change", "seq": 377, "timestamp": 1784725735.729}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 13.125}, "event": "change", "seq": 378, "timestamp": 1784725735.736}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 12.8125}, "event": "change", "seq": 379, "timestamp": 1784725735.744}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 12.65625}, "event": "change", "seq": 380, "timestamp": 1784725735.751}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 12.34375}, "event": "change", "seq": 381, "timestamp": 1784725735.759}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 12.1875}, "event": "change", "seq": 382, "timestamp": 1784725735.766}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 12.03125}, "event": "change", "seq": 383, "timestamp": 1784725735.789}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 11.875}, "event": "change", "seq": 384, "timestamp": 1784725735.796}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 11.71875}, "event": "change", "seq": 385, "timestamp": 1784725735.811}
+{"category": "ui", "data": {"id": "slider:#4", "type": "slider", "value": 11.5625}, "event": "change", "seq": 386, "timestamp": 1784725735.875}

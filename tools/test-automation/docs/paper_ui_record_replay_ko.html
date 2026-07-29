@@ -93,8 +93,12 @@ UI 매개적 특성은 임무 수준 시나리오의 <span class="h">시험·시
 <h2>IV. 구현</h2>
 <p>본 프레임워크를 <b>QGroundControl</b>(Qt/QML)에 구현하였다. 6개의 베이스 컨트롤을 계측하였고, 싱글톤
 레지스트리가 UDP 버스(송신 <code>45678</code>, 수신 <code>45679</code>)를 통해 방송·재생을 중개한다. 텔레메트리는 연결된
-차량별로 500&nbsp;ms마다 방송된다. 외부 <b>시나리오 스튜디오</b>(Python)는 실시간 컨트롤 탐색, 텔레메트리 표시, 스텝
-작성, 저장/불러오기, 헤드리스 실행을 제공한다.</p>
+차량별로 500&nbsp;ms마다 방송된다. 외부 도구로는 EventBroadcaster 기반의 모니터·녹화·재생·시나리오 기능을 하나로
+통합한 <b>UI Automation Console</b>(Python)을 구현하였다. 이 콘솔은 네 개의 작업 화면—(1) <i>Monitor/Record</i>:
+전 채널 이벤트 스트림을 관찰하고 <code>.jsonl</code>로 녹화, (2) <i>Scenario</i>: 실시간 컨트롤 팔레트와 라이브
+이벤트 피드로 스텝을 작성하고 시간·텔레메트리 조건을 부여, (3) <i>Replay</i>: 녹화를 원래 타이밍대로 재생,
+(4) <i>Stack</i>: 시뮬레이션 스택 기동/종료—을 제공하며, 헤드리스 실행도 지원한다. 작성된 시나리오는 원본
+명령(JSON)뿐 아니라 사람이 읽는 요약(예: <i>Start Mission</i>, <i>→ waypoint&nbsp;3</i>)으로도 표시된다.</p>
 <table>
   <tr><th>베이스 컨트롤</th><th>녹화 이벤트</th><th>재생 작동</th></tr>
   <tr><td>Button</td><td>클릭</td><td><code>clicked()</code> 발생</td></tr>

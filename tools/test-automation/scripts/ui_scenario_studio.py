@@ -179,7 +179,7 @@ def run_scenario(bus, scenario, dry_run=False, log=print, stop=lambda: False):
         cmd = step.get("cmd")
         if not cmd:
             continue
-        log(f"[{i}] -> {json.dumps(cmd, ensure_ascii=False)}")
+        log(f"[{i}] {human_cmd(cmd)}")
         if not dry_run:
             bus.send(cmd)
     log("[scenario] done")
@@ -250,7 +250,7 @@ def replay_recording(bus, events, rate=1.0, only=None, dry=False, log=print, sto
         cmd = to_command(evt)
         if not cmd:
             continue
-        log(f"-> {json.dumps(cmd, ensure_ascii=False)}")
+        log(human_cmd(cmd))
         if not dry:
             bus.send(cmd)
     log("[replay] done")
@@ -308,6 +308,33 @@ def _num(s):
         return int(f) if f == int(f) else f
     except (TypeError, ValueError):
         return s
+
+
+_GUIDED = {"arm": "Arm", "disarm": "Disarm", "rtl": "RTL", "land": "Land",
+           "start_mission": "Start Mission", "pause": "Pause"}
+
+
+def human_cmd(cmd):
+    """Render a command dict as a short, human-readable label (not raw JSON)."""
+    if not isinstance(cmd, dict):
+        return str(cmd)
+    a = cmd.get("action", "")
+    if a == "ui":
+        cid = cmd.get("id", "?")
+        return f"{cid}  =  {cmd['value']}" if "value" in cmd else f"click  {cid}"
+    if a == "set_current_wp":
+        return f"→ waypoint {cmd.get('index')}"
+    if a == "select_vehicle":
+        return f"select vehicle {cmd.get('vehicleId')}"
+    if a == "takeoff":
+        return "takeoff " + (f"{cmd['altitude']} m" if "altitude" in cmd else "")
+    if a == "set_mode":
+        return f"mode → {cmd.get('mode','')}"
+    if a in _GUIDED:
+        return _GUIDED[a]
+    rest = " ".join(f"{k}={v}" for k, v in cmd.items() if k != "action")
+    name = a[3:] if a.startswith("ux_") else a
+    return f"{name}  {rest}".strip()
 
 
 def launch_gui():
@@ -385,21 +412,28 @@ def launch_gui():
     tab_stk = ttk.Frame(nb, padding=6); nb.add(tab_stk, text="Stack")
 
     # ---------- TAB: Scenario ----------
-    ttk.Label(tab_scen, text="Scenario steps", font=("", 10, "bold")).pack(anchor=tk.W)
-    cols = ("trigger", "command")
+    schead = ttk.Frame(tab_scen); schead.pack(fill=tk.X)
+    ttk.Label(schead, text="Scenario steps", font=("", 10, "bold")).pack(side=tk.LEFT)
+    raw_view = tk.BooleanVar(value=False)
+    ttk.Checkbutton(schead, text="raw JSON view", variable=raw_view,
+                    command=lambda: redraw_steps()).pack(side=tk.RIGHT)
+    cols = ("num", "trigger", "command")
     tree = ttk.Treeview(tab_scen, columns=cols, show="headings", height=13)
-    tree.heading("trigger", text="Trigger"); tree.column("trigger", width=240)
-    tree.heading("command", text="Command"); tree.column("command", width=520)
+    tree.heading("num", text="#"); tree.column("num", width=32, anchor=tk.CENTER)
+    tree.heading("trigger", text="When"); tree.column("trigger", width=230)
+    tree.heading("command", text="Do"); tree.column("command", width=500)
     tree.pack(fill=tk.BOTH, expand=True)
 
     def redraw_steps():
         tree.delete(*tree.get_children())
-        for s in steps:
+        for i, s in enumerate(steps, 1):
             if "at" in s: trig = f"at {s['at']}s"
             elif "when" in s:
                 w = s["when"]; trig = f"when {w.get('field')} {w.get('op')} {w.get('value')} (v{w.get('vehicle',1)})"
             else: trig = f"wait {s.get('wait',0)}s"
-            tree.insert("", tk.END, values=(trig, json.dumps(s.get("cmd", {}), ensure_ascii=False)))
+            cmd = s.get("cmd", {})
+            desc = json.dumps(cmd, ensure_ascii=False) if raw_view.get() else human_cmd(cmd)
+            tree.insert("", tk.END, values=(i, trig, desc))
 
     ed = ttk.LabelFrame(tab_scen, text="Add / edit step", padding=6); ed.pack(fill=tk.X, pady=6)
     trow = ttk.Frame(ed); trow.pack(fill=tk.X)

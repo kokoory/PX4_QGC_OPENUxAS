@@ -67,14 +67,23 @@
 </ul>
 <div class="note"><b>주의</b> — id는 UI 텍스트 기반이라 <b>화면 문구가 바뀌면 id도 바뀐다</b>. 뷰가 로드되어 있어야 그 컨트롤이 등록된다(예: Plan 뷰 버튼은 Plan 뷰를 한 번 열어야 목록에 뜸).</div>
 
-<h2>3. 외부 시나리오 프로그램 <code>ui_scenario_studio.py</code></h2>
-<pre><span class="k"># GUI (팔레트 + 텔레메트리 + 스텝 편집 + 실행)</span>
+<h2>3. UI Automation Console <code>ui_scenario_studio.py</code></h2>
+<p>EventBroadcaster 도구(모니터·녹화·재생·시나리오)를 <b>탭 하나의 올인원 GUI</b>로 통합한 프로그램이다.</p>
+<pre><span class="k"># GUI (탭: Monitor/Record · Scenario · Replay · Stack)</span>
 python3 ui_scenario_studio.py
 
-<span class="k"># 저장한 시나리오 헤드리스 실행</span>
-python3 ui_scenario_studio.py --run scenario.json
-python3 ui_scenario_studio.py --run scenario.json --dry-run</pre>
-<p><b>GUI 기능</b>: 왼쪽에 QGC가 방송하는 <b>모든 컨트롤 팔레트</b>(검색·Refresh)와 실시간 텔레메트리, 오른쪽에 스텝 목록·편집·Save/Load·Run/Stop. 팔레트 항목을 고르면 그 id가 명령에 자동 입력된다. "Refresh"는 QGC에 <code>__dump__</code>를 보내 현재 등록된 전 컨트롤을 받아온다.</p>
+<span class="k"># 헤드리스 실행</span>
+python3 ui_scenario_studio.py --run scenario.json     <span class="k"># 시나리오</span>
+python3 ui_scenario_studio.py --replay session.jsonl  <span class="k"># 녹화 재생</span></pre>
+<p><b>왼쪽(항상 표시)</b>: ① <b>UI controls</b> — QGC가 방송하는 전 컨트롤 팔레트(검색·Refresh=<code>__dump__</code>), ② <b>Live events</b> — 지금 QGC에서 누른 것이 실시간으로 뜨고 <b>더블클릭하면 시나리오 스텝으로 추가</b>, ③ <b>Telemetry</b> — 차량 상태 실시간.</p>
+<table>
+  <tr><th>탭</th><th>기능</th></tr>
+  <tr><td><b>Monitor / Record</b></td><td>전 채널 이벤트 스트림 + 필터, <b>● Record</b>로 <code>.jsonl</code> 녹화</td></tr>
+  <tr><td><b>Scenario</b></td><td>스텝 작성(팔레트/라이브피드→스텝), 트리거(시간/조건), Run/Save/Load, 녹화 <b>Import</b>. 표는 <b>#·When·Do</b>로 <b>사람이 읽는 라벨</b> 표시(우상단 <code>raw JSON view</code>로 토글)</td></tr>
+  <tr><td><b>Replay</b></td><td>녹화 <code>.jsonl</code> 불러와 <b>원래 타이밍대로 재생</b>(rate·필터·dry-run)</td></tr>
+  <tr><td><b>Stack</b></td><td>UxAS·PX4 함대·브리지·리스너·QGC <b>버튼으로 기동/종료</b></td></tr>
+</table>
+<p class="note">이전의 <code>eb_monitor(_gui)</code>·<code>eb_replay</code>·<code>eb_scenario</code> 기능이 이 콘솔에 흡수됨. Scenario 표의 "Do" 칸은 <code>click button:Arm</code>·<code>Start Mission</code>·<code>takeoff 80 m</code>·<code>→ waypoint 3</code>처럼 읽기 쉽게 표시된다.</p>
 
 <h2>4. 시나리오 파일 형식</h2>
 <pre>{
@@ -123,13 +132,14 @@ python3 ui_scenario_studio.py --run scenario.json --dry-run</pre>
   ]
 }</pre>
 
-<h2>6. 녹화 → 재생 워크플로</h2>
-<div class="flow"><b>녹화</b> <code>eb_monitor_gui.py</code> 로 방송 관찰·Save &nbsp;──▶&nbsp; <b>편집</b> studio에서 조건 추가 &nbsp;──▶&nbsp; <b>재생</b> <code>--run</code></div>
+<h2>6. 녹화 → 재생 워크플로 (콘솔 하나로)</h2>
+<div class="flow"><b>Monitor/Record</b> ●녹화 &nbsp;──▶&nbsp; QGC 조작 &nbsp;──▶&nbsp; ■정지·Save <code>.jsonl</code> &nbsp;──▶&nbsp; <b>Replay</b> ▶재생 &nbsp;(또는 <b>Scenario</b>에서 Import→조건 추가→Run)</div>
 <ul>
-  <li><code>eb_monitor_gui.py</code> — 45678 방송을 시간순 GUI로 보며 녹화(Save)</li>
-  <li><code>eb_replay.py</code> — 녹화 파일 원래 타이밍대로 재생</li>
-  <li><code>ui_scenario_studio.py</code> — 손으로 시나리오 작성 + 조건/시간 + 실행</li>
+  <li><b>Monitor/Record 탭</b> — 45678 전 채널을 보며 <code>.jsonl</code>로 녹화</li>
+  <li><b>Replay 탭</b> — 그 파일을 원래 타이밍대로 재생(rate/필터)</li>
+  <li><b>Scenario 탭</b> — 녹화 Import + 조건/시간 편집 후 실행, 라이브피드 더블클릭으로 스텝 추가</li>
 </ul>
+<p class="note">모두 <code>ui_scenario_studio.py</code> 한 프로그램 안에 있다. (독립 <code>eb_*</code> 스크립트도 그대로 남아 있어 CLI로 쓸 수 있다.)</p>
 
 <div class="note"><b>실행 순서</b> — ① QGC 실행(EventBroadcaster <span class="port">45678</span>/<span class="port">45679</span> 자동 개방) ② (조건 쓰려면) 차량 연결로 텔레메트리 방송 ③ <code>ui_scenario_studio.py</code> 실행. 조작하려는 컨트롤이 속한 뷰를 미리 한 번 열어 등록되게 할 것.</div>
 

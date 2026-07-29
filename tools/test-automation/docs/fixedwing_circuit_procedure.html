@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 16mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 9px; color:#888; } }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Sans CJK KR", "DejaVu Sans", sans-serif; font-size: 10px; line-height: 1.5; color:#1a1a1a; }
+  h1 { font-size: 20px; color:#b5651d; border-bottom: 3px solid #b5651d; padding-bottom: 6px; margin: 0 0 4px; }
+  h2 { font-size: 13.5px; color:#8a4a10; margin: 15px 0 5px; border-left: 4px solid #b5651d; padding-left: 8px; }
+  h3 { font-size: 11px; color:#6a3a0c; margin: 9px 0 3px; }
+  .sub { color:#666; font-size: 11px; margin-bottom: 12px; }
+  code { font-family: "DejaVu Sans Mono", monospace; background:#f3efe9; padding:1px 4px; border-radius:3px; font-size:9px; color:#8a4a10; }
+  pre { background:#2b2119; color:#f0e6d6; padding:9px 11px; border-radius:5px; font-size:8.7px; line-height:1.45; white-space:pre-wrap; }
+  pre .k { color:#e8b06a; }
+  table { border-collapse: collapse; width:100%; margin:6px 0; font-size:9px; }
+  th, td { border:1px solid #d8cfc2; padding:4px 7px; text-align:left; vertical-align:top; }
+  th { background:#f6efe6; color:#8a4a10; }
+  tr:nth-child(even) td { background:#faf7f2; }
+  .note { background:#fff8e6; border-left:4px solid #e8b73a; padding:6px 10px; margin:8px 0; font-size:9px; border-radius:0 4px 4px 0; }
+  .warn { background:#fdecea; border-left:4px solid #d9534f; padding:6px 10px; margin:8px 0; font-size:9px; border-radius:0 4px 4px 0; }
+  .ok { background:#eaf6ec; border-left:4px solid #2e8b57; padding:6px 10px; margin:8px 0; font-size:9px; border-radius:0 4px 4px 0; }
+  ol { margin:4px 0 8px 18px; padding:0; } li { margin:2px 0; }
+  .flow { text-align:center; font-size:10px; color:#8a4a10; margin:6px 0; }
+  .flow b { color:#b5651d; }
+  .step { font-weight:bold; color:#b5651d; }
+</style>
+</head>
+<body>
+
+<h1>고정익 SITL: 자동이륙 → 선회 → 자동착륙 + 전역 녹화·재생 절차</h1>
+<div class="sub">PX4 SITL(Cessna) · QGroundControl · UI Automation Console · 2026 · 논문 근거자료용</div>
+
+<div class="flow">
+  <b>PX4 SITL 기동</b> ▶ <b>QGC 세팅</b> ▶ <b>Plan 작성·저장(.plan)</b> ▶ <b>●녹화</b> ▶ <b>운용자 조작</b>(로드→업로드→시동→미션시작) ▶ 이륙·선회·착륙 ▶ <b>■정지·저장</b> ▶ <b>재생</b>
+</div>
+
+<div class="warn"><b>녹화·재생 범위 (재현성 핵심)</b> — 전역 UI 후킹은 <b>버튼·체크박스·콤보·텍스트필드·슬라이더</b>를 잡는다. <b>지도 위 웨이포인트 드래그(임무 그리기)는 잡지 못한다.</b> 따라서 임무 지오메트리는 <b><code>.plan</code>으로 한 번 고정</b>하고, 녹화·재생하는 "운용자 세션"은 <b>버튼 시퀀스</b>(파일 Open→Upload→Arm→Start&nbsp;Mission)로 구성한다. 이 구성이 논문에서 명확히 재현 가능한 형태다.</div>
+
+<h2>0. 준비물 — 좌표 정의 (예시값, 조정 가능)</h2>
+<p>기준점 home = 활주로 이착륙점. 북쪽(+lat), 1°lat ≈ 111,320&nbsp;m.</p>
+<table>
+  <tr><th>항목</th><th>좌표 / 값</th><th>비고</th></tr>
+  <tr><td><b>활주로/이착륙 기준(home)</b></td><td>37.49790, 127.02760, ~38&nbsp;m AMSL</td><td>Cessna 스폰 지점 (korea world)</td></tr>
+  <tr><td><b>이륙(Takeoff)</b></td><td>home 부근, AGL <b>80&nbsp;m</b>, climbout 방위 <b>000°</b></td><td>고정익 이륙 아이템</td></tr>
+  <tr><td><b>선회지점(Loiter)</b></td><td><b>37.50868, 127.02760</b> (북 1,200&nbsp;m), AGL <b>120&nbsp;m</b>, 반경 <b>120&nbsp;m</b>, <b>turns=1</b></td><td>1바퀴 선회</td></tr>
+  <tr><td><b>착륙 접근 로이터</b></td><td>터치다운에서 접근방위로 <b>≥ 900&nbsp;m</b>, alt <b>80&nbsp;m</b></td><td>활공각 ≤ 6°</td></tr>
+  <tr><td><b>터치다운</b></td><td>home 부근 37.49790, 127.02760</td><td>자동착륙</td></tr>
+</table>
+<div class="note"><b>활공각 규칙</b> — 접근로이터→터치다운 거리 ≥ <code>접근고도 / tan(6°)</code> ≈ <code>고도 × 9.5</code>. (80&nbsp;m면 ≥ 760&nbsp;m, 여유 900&nbsp;m). PX4가 8°보다 급하면 착륙을 거부한다.</div>
+
+<h2>1. PX4 SITL 고정익 기동</h2>
+<pre><span class="k"># tools/test-automation 에서</span>
+DISPLAY=:1 GZ_GUI=1 RECORDER=0 PX4_DIR=/home/swerc/PX4-Autopilot \
+  bash scripts/launch_all.sh --ids 4</pre>
+<p>Gazebo에 Cessna 1대(id 4, sitl_udp 14544), home=강남. 콘솔에 <code>PX4 #4 RC Cessna ... launched</code> 뜨면 OK. (UxAS·브리지·리스너는 <b>불필요</b> — 순수 QGC 미션 비행.)</p>
+
+<h2>2. QGC 실행 + 연결 확인</h2>
+<pre>DISPLAY=:1 /home/swerc/PX4_QGC_OPENUxAS/build/Release/QGroundControl</pre>
+<p>상단바에 기체(Ready/비행모드)가 뜨는지 확인. 안 뜨면 EKF 수렴까지 ~30초 대기.</p>
+
+<h2>3. QGC 파라미터 세팅 (고정익 이착륙 — 한 번만)</h2>
+<p>Vehicle Setup → Parameters:</p>
+<table>
+  <tr><th>파라미터</th><th>값</th><th>의미</th></tr>
+  <tr><td><code>MIS_TKO_LAND_REQ</code></td><td>2 이상</td><td>고정익 미션에 이륙·착륙 필수 (미션에 둘 다 넣으므로 OK)</td></tr>
+  <tr><td><code>FW_LND_ANG</code></td><td>5°</td><td>착륙 활공각 (급하면 낮춤)</td></tr>
+  <tr><td><code>NAV_LOITER_RAD</code></td><td>120</td><td>선회/착륙 로이터 반경 (m)</td></tr>
+  <tr><td><code>NAV_FW_ALT_RAD</code> / <code>NAV_ACC_RAD</code></td><td>10 / 10</td><td>웨이포인트 도달 판정 여유 (m)</td></tr>
+  <tr><td>Geofence</td><td>비활성</td><td>Safety 탭 — 강남 상공이라 걸리면 안 됨</td></tr>
+</table>
+
+<h2>4. Plan 작성 → <code>.plan</code> 저장 (지오메트리 고정)</h2>
+<p>QGC <b>Plan</b> 뷰에서:</p>
+<ol>
+  <li><span class="step">Takeoff</span> 아이템 → home 부근, <b>고도 80&nbsp;m</b>, climbout 북쪽</li>
+  <li><span class="step">선회 웨이포인트</span> → 37.50868, 127.02760 추가 → 명령을 <b>Loiter Turns</b>(<code>MAV_CMD_NAV_LOITER_TURNS</code>)로, <b>turns=1, radius=120, alt=120</b><br><span style="color:#888">(UI에 안 보이면 mission item editor에서 명령 변경, 또는 Loiter 패턴 사용)</span></li>
+  <li><span class="step">Fixed Wing Landing Pattern</span> → 터치다운을 home으로, <b>접근 로이터를 ≥ 900&nbsp;m</b> 떨어뜨려 활공각 표시가 <b>≤ 6°</b> 되게 (QGC가 각도를 그려줌)</li>
+  <li>상단 <b>Upload</b>로 기체 전송 확인</li>
+  <li><b>File → Save As → <code>fw_circuit.plan</code></b> 저장 &nbsp;← <b>재생 재현성의 핵심</b></li>
+</ol>
+
+<h2>5. UI Automation Console 기동 + 녹화 시작</h2>
+<pre>DISPLAY=:1 python3 tools/test-automation/scripts/ui_scenario_studio.py</pre>
+<ol>
+  <li><b>Monitor / Record</b> 탭 → <b>● Record</b> → 파일명 <code>fw_session.jsonl</code></li>
+  <li>왼쪽 <b>Telemetry</b>에 고도/모드가 뜨는지 확인 (논문용 고도 프로파일도 이 녹화에 포함)</li>
+</ol>
+
+<h2>6. 임무 실행 (여기부터 "운용자 세션" 녹화 구간)</h2>
+<p>녹화 켠 상태에서 QGC를 이 순서로 조작 (전부 UI 후킹에 잡힘):</p>
+<ol>
+  <li>Plan 뷰 → <b>Open</b> → <code>fw_circuit.plan</code> → <b>Upload</b></li>
+  <li><b>Fly</b> 뷰로 전환</li>
+  <li>액션 슬라이더 → <b>Arm</b></li>
+  <li>액션 → <b>Start Mission</b></li>
+  <li>→ <b>자동이륙(80&nbsp;m) → 북쪽 선회지점 1바퀴 → 남하 접근 → 자동착륙</b> 관찰</li>
+  <li>착륙·정지 확인</li>
+</ol>
+
+<h2>7. 녹화 종료 + 저장</h2>
+<p>Console <b>Monitor/Record → ■ Stop rec</b> → <code>fw_session.jsonl</code> 저장 (버튼 이벤트 + 텔레메트리 스트림 포함).</p>
+
+<h2>8. 재생 (재현성 시연)</h2>
+<ol>
+  <li>sim 리셋 — PX4 종료 후 재기동(1번 다시), QGC 재연결<br><code>pkill -9 -f 'bin/px4 -i'</code> · <code>pkill -9 -f 'gz sim'</code> (각각 별도 실행)</li>
+  <li>Console <b>Replay</b> 탭 → <b>Load <code>fw_session.jsonl</code></b> → <b>▶ Replay</b><br><code>only</code>에 <code>ui,action</code>만 남기면 운용자 조작만 재생(telemetry 제외)</li>
+  <li>QGC가 <b>Open → Upload → Arm → Start Mission을 스스로 실행</b> → 동일 비행 재현</li>
+</ol>
+<div class="ok"><b>대안 — 시나리오로 실행</b>: 위 6단계를 <b>Scenario 탭</b>에서 스텝으로 작성(라이브피드 더블클릭)하고 조건/타이밍을 부여해 <b>▶ Run</b>. 예: "고도 80&nbsp;m 도달 시 특정 웨이포인트로 이동" 같은 조건부 흐름도 가능.</div>
+
+<h2>9. 논문 근거자료 수집</h2>
+<table>
+  <tr><th>자료</th><th>위치 / 방법</th></tr>
+  <tr><td><b>운용자 세션 녹화</b></td><td><code>fw_session.jsonl</code> — 버튼 이벤트 타임스탬프 = 재현성 증거</td></tr>
+  <tr><td><b>비행 로그(ulog)</b></td><td>PX4 <code>build/.../log/</code> 또는 QGC Analyze → Log Download</td></tr>
+  <tr><td><b>텔레메트리 프로파일</b></td><td>녹화 jsonl의 <code>telemetry</code> 채널(고도/속도/wp) → 원본 vs 재생 그래프</td></tr>
+  <tr><td><b>임무 정의</b></td><td><code>fw_circuit.plan</code></td></tr>
+  <tr><td><b>스크린샷/화면녹화</b></td><td>이륙·선회·착륙 각 단계</td></tr>
+  <tr><td><b>재생 검증</b></td><td>원본 궤적 vs 재생 궤적 오차, 이벤트 타임라인 일치</td></tr>
+</table>
+
+<div class="note"><b>논문 서술 예</b> — "동일한 <code>.plan</code> 임무 정의 하에서 운용자 조작(로드·업로드·시동·미션시작)을 이벤트로 녹화·재생하여 자동이륙–선회–자동착륙 비행을 재현하였다. 녹화 이벤트 타임스탬프와 텔레메트리 프로파일의 원본/재생 일치가 재현성을 입증한다."</div>
+
+</body>
+</html>
