@@ -79,7 +79,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           fetch-tags: ${{ github.event_name != 'pull_request' }}
@@ -96,7 +96,7 @@ jobs:
 
       - name: Initialize CodeQL
         if: matrix.build_type == 'Debug' && github.event_name != 'pull_request'
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v4.37.3
         with:
           languages: c-cpp
           config-file: ./.github/codeql/codeql-config.yml
@@ -120,7 +120,7 @@ jobs:
       - name: Perform CodeQL Analysis
         if: matrix.build_type == 'Debug' && github.event_name != 'pull_request'
         continue-on-error: true
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v4.37.3
         with:
           category: "/language:c-cpp"
 
@@ -224,7 +224,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: ${{ matrix.fetch_depth }}
           fetch-tags: ${{ matrix.fetch_tags }}
